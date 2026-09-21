@@ -23,9 +23,9 @@
     --success: #16A34A;
     --warning: #F59E0B;
     --danger: #DC2626;
-    --card-radius: 12px;
-    --control-radius: 8px;
-    --pill-radius: 6px;
+    --card-radius: 4px;
+    --control-radius: 4px;
+    --pill-radius: 3px;
     --shadow-subtle: 0 1px 3px rgba(16, 42, 67, 0.05), 0 1px 2px rgba(16, 42, 67, 0.03);
     --shadow-card: 0 4px 16px -2px rgba(16, 42, 67, 0.06), 0 2px 6px -1px rgba(16, 42, 67, 0.03);
     --font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -97,7 +97,7 @@ a {
 
 .brand-logo-card {
     background: #ffffff;
-    border-radius: 9px;
+    border-radius: 4px;
     padding: 8px 12px;
     display: flex;
     align-items: center;
@@ -125,7 +125,7 @@ a {
     place-items: center;
     width: 40px;
     height: 40px;
-    border-radius: 8px;
+    border-radius: 4px;
     background: linear-gradient(135deg, #10B981 0%, #087F6C 100%);
     color: #ffffff;
     box-shadow: 0 4px 12px rgba(8, 127, 108, 0.35);
@@ -167,7 +167,7 @@ a {
     align-items: center;
     gap: 12px;
     padding: 9px 12px;
-    border-radius: 8px;
+    border-radius: 4px;
     color: #A3C2BB;
     font-size: 13.5px;
     font-weight: 600;
@@ -258,7 +258,7 @@ a {
     font-size: 11.5px;
     font-weight: 600;
     padding: 5px 8px;
-    border-radius: 6px;
+    border-radius: 3px;
     transition: all 0.15s ease;
     flex-shrink: 0;
 }
@@ -304,7 +304,7 @@ a {
     display: none;
     background: none;
     border: 1px solid var(--card-border);
-    border-radius: 6px;
+    border-radius: 3px;
     width: 34px;
     height: 34px;
     align-items: center;
@@ -356,7 +356,7 @@ a {
     padding: 0 34px 0 32px;
     font-size: 12.5px;
     border: 1px solid var(--card-border);
-    border-radius: 8px;
+    border-radius: 4px;
     background: #F8FAFC;
     color: var(--text-main);
     outline: none;
@@ -403,7 +403,7 @@ a {
     width: 340px;
     background: #ffffff;
     border: 1px solid var(--card-border);
-    border-radius: 8px;
+    border-radius: 4px;
     box-shadow: 0 10px 28px rgba(16, 42, 67, 0.12);
     z-index: 1000;
     max-height: 320px;
@@ -437,7 +437,7 @@ a {
     padding: 5px 11px;
     background: #F0FDF4;
     border: 1px solid #BBF7D0;
-    border-radius: 6px;
+    border-radius: 3px;
     font-size: 12px;
     font-weight: 600;
     color: #166534;
@@ -455,7 +455,7 @@ a {
 .topbar-icon-btn {
     width: 36px;
     height: 36px;
-    border-radius: 8px;
+    border-radius: 4px;
     background: transparent;
     border: 1px solid var(--card-border);
     color: var(--text-muted);
@@ -500,7 +500,7 @@ a {
     min-width: 18px;
     height: 18px;
     padding: 0 4px;
-    border-radius: 9px;
+    border-radius: 4px;
     background: #EF4444;
     color: #ffffff;
     font-size: 10.5px;
@@ -527,7 +527,7 @@ a {
     width: 380px;
     max-width: 90vw;
     background: #ffffff;
-    border-radius: 12px;
+    border-radius: 4px;
     box-shadow: 0 12px 36px rgba(16, 42, 67, 0.16), 0 2px 8px rgba(16, 42, 67, 0.08);
     border: 1px solid #E2E8F0;
     z-index: 100;
@@ -586,7 +586,7 @@ a {
     font-size: 11px;
     font-weight: 700;
     padding: 1px 7px;
-    border-radius: 10px;
+    border-radius: 4px;
     border: 1px solid #DBEAFE;
 }
 
@@ -600,7 +600,7 @@ a {
     background: #087F6C;
     color: #ffffff;
     border: none;
-    border-radius: 6px;
+    border-radius: 3px;
     padding: 5px 9px;
     font-size: 11.5px;
     font-weight: 600;
@@ -702,7 +702,7 @@ a {
 .notif-type-icon {
     width: 32px;
     height: 32px;
-    border-radius: 8px;
+    border-radius: 4px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -935,7 +935,7 @@ a {
 
 .admin-notice-modal-card {
     background: #ffffff;
-    border-radius: 14px;
+    border-radius: 4px;
     width: 520px;
     max-width: 100%;
     box-shadow: 0 20px 45px rgba(0, 0, 0, 0.2), 0 4px 12px rgba(0, 0, 0, 0.1);
@@ -972,7 +972,7 @@ a {
 .modal-icon-badge {
     width: 40px;
     height: 40px;
-    border-radius: 10px;
+    border-radius: 4px;
     background: #E6F5F2;
     color: #087F6C;
     display: flex;
@@ -1007,7 +1007,7 @@ a {
     line-height: 1;
     color: #94A3B8;
     cursor: pointer;
-    border-radius: 6px;
+    border-radius: 3px;
     width: 32px;
     height: 32px;
     display: flex;
@@ -1056,7 +1056,7 @@ a {
     width: 100%;
     padding: 9px 12px;
     border: 1px solid #CBD5E1;
-    border-radius: 8px;
+    border-radius: 4px;
     font-family: inherit;
     font-size: 13px;
     color: #0F172A;
@@ -1099,7 +1099,7 @@ a {
     border: 1px solid #E2E8F0;
     color: #475569;
     padding: 9px 16px;
-    border-radius: 8px;
+    border-radius: 4px;
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;
@@ -1116,7 +1116,7 @@ a {
     border: none;
     color: #ffffff;
     padding: 9px 18px;
-    border-radius: 8px;
+    border-radius: 4px;
     font-size: 13px;
     font-weight: 700;
     cursor: pointer;
@@ -1145,7 +1145,7 @@ a {
     font-size: 13px;
     font-weight: 700;
     padding: 8px 16px;
-    border-radius: 8px;
+    border-radius: 4px;
     display: inline-flex;
     align-items: center;
     gap: 7px;
@@ -1180,7 +1180,7 @@ a {
 .page-title-badge {
     width: 42px;
     height: 42px;
-    border-radius: 8px;
+    border-radius: 4px;
     background: var(--primary-light);
     color: var(--primary);
     display: flex;
@@ -1215,7 +1215,7 @@ a {
     justify-content: center;
     gap: 7px;
     border: 1px solid transparent;
-    border-radius: 6px;
+    border-radius: 3px;
     padding: 8px 15px;
     font-weight: 600;
     text-decoration: none;
@@ -1308,7 +1308,7 @@ a {
 .card-icon-badge {
     width: 36px;
     height: 36px;
-    border-radius: 8px;
+    border-radius: 4px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1374,7 +1374,7 @@ a {
     align-items: center;
     gap: 7px;
     padding: 8px 14px;
-    border-radius: 8px;
+    border-radius: 4px;
     font-size: 12.5px;
     font-weight: 600;
     text-decoration: none;
@@ -1437,7 +1437,7 @@ a {
 .stat-card-badge {
     width: 42px;
     height: 42px;
-    border-radius: 10px;
+    border-radius: 4px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1531,7 +1531,7 @@ a {
     color: var(--primary);
     border: 1px solid #BCE8DB;
     padding: 6px;
-    border-radius: 6px;
+    border-radius: 3px;
     font-size: 12px;
     font-weight: 600;
     display: inline-flex;
@@ -1558,7 +1558,7 @@ a {
 .patient-header-banner {
     background: #F8FAFC;
     border: 1px solid var(--card-border);
-    border-radius: 10px;
+    border-radius: 4px;
     padding: 12px 16px;
     display: flex;
     align-items: center;
@@ -1580,7 +1580,7 @@ a {
 .patient-banner-avatar {
     width: 40px;
     height: 40px;
-    border-radius: 8px;
+    border-radius: 4px;
     background: #E2E8F0;
     color: #475569;
     display: flex;
@@ -1664,7 +1664,7 @@ a {
 .detail-cell {
     background: #F8FAFC;
     border: 1px solid #EEF2F6;
-    border-radius: 8px;
+    border-radius: 4px;
     padding: 10px 12px;
     display: flex;
     align-items: flex-start;
@@ -1721,7 +1721,7 @@ a {
 .detail-grid-bottom-bar {
     background: #F8FAFC;
     border: 1px solid #EEF2F6;
-    border-radius: 8px;
+    border-radius: 4px;
     padding: 10px 14px;
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -1739,7 +1739,7 @@ a {
 
 .quick-filter-card {
     padding: 12px 14px;
-    border-radius: 8px;
+    border-radius: 4px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1811,7 +1811,7 @@ a {
     padding: 0 14px 0 34px;
     font-size: 13px;
     border: 1px solid var(--card-border);
-    border-radius: 8px;
+    border-radius: 4px;
     background: #F8FAFC;
     color: var(--text-main);
     outline: none;
@@ -1838,7 +1838,7 @@ a {
 .tip-card {
     background: #F8FAFC;
     border: 1px solid #EEF2F6;
-    border-radius: 8px;
+    border-radius: 4px;
     padding: 12px 14px;
     display: flex;
     align-items: center;
@@ -1848,7 +1848,7 @@ a {
 .tip-icon-badge {
     width: 30px;
     height: 30px;
-    border-radius: 6px;
+    border-radius: 3px;
     background: #EFF6FF;
     color: #2563EB;
     display: flex;
@@ -1882,7 +1882,7 @@ a {
     color: var(--primary);
     border: 1px solid var(--card-border);
     padding: 6px 12px;
-    border-radius: 6px;
+    border-radius: 3px;
     font-size: 12.5px;
     font-weight: 600;
     display: inline-flex;
@@ -1980,7 +1980,7 @@ a {
 .empty-state-icon {
     width: 48px;
     height: 48px;
-    border-radius: 12px;
+    border-radius: 4px;
     background: #F1F5F9;
     color: #64748B;
     display: flex;
@@ -2112,7 +2112,7 @@ a {
     justify-content: center;
     gap: 0;
     padding: 6px;
-    border-radius: 6px;
+    border-radius: 3px;
     font-size: 12px;
     font-weight: 600;
     text-decoration: none;
@@ -2368,7 +2368,7 @@ a {
     aspect-ratio: 210/297;
     background: #ffffff;
     border: 1px solid #ccd9d6;
-    border-radius: 6px;
+    border-radius: 3px;
     box-shadow: 0 10px 25px rgba(18, 53, 44, 0.06);
     overflow: hidden;
 }
@@ -2436,7 +2436,7 @@ td small {
 .filter-bar input, .filter-bar select {
     padding: 10px 12px;
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: 3px;
     font: inherit;
     background: #fff;
     outline: none;
@@ -2462,7 +2462,7 @@ td small {
     gap: 14px;
     padding: 12px 16px;
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: 3px;
     background: #ffffff;
 }
 
@@ -2486,7 +2486,7 @@ td small {
 
 .permission-table {
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: 3px;
     overflow: hidden;
     margin-bottom: 18px;
 }
@@ -2549,7 +2549,7 @@ td small {
     width: 100%;
     border: 1px solid #dbe8e4;
     background: #f8fbfa;
-    border-radius: 6px;
+    border-radius: 3px;
     padding: 9px 10px;
     text-align: left;
     margin-bottom: 7px;
@@ -2639,7 +2639,7 @@ td small {
 .login-logo {
     width: 46px;
     height: 46px;
-    border-radius: 6px;
+    border-radius: 3px;
     background: #0cb68b;
     color: #fff;
     display: grid;
@@ -2664,7 +2664,7 @@ td small {
 /* Alerts */
 .alert {
     padding: 12px 16px;
-    border-radius: 6px;
+    border-radius: 3px;
     margin-bottom: 18px;
     font-size: 13.5px;
     display: flex;
@@ -2725,7 +2725,7 @@ td small {
 
 .opd-modal-content {
     background: #ffffff;
-    border-radius: 6px;
+    border-radius: 3px;
     box-shadow: 0 25px 60px -15px rgba(6, 44, 34, 0.35), 0 0 0 1px rgba(6, 44, 34, 0.08);
     display: flex;
     flex-direction: column;
@@ -2974,7 +2974,7 @@ td small {
 .profile-info-card {
     background: #ffffff;
     border: 1px solid #e2e8f0;
-    border-radius: 5px;
+    border-radius: 3px;
     padding: 18px;
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
 }
@@ -3120,7 +3120,7 @@ td small {
 .timeline-container-card {
     background: #ffffff;
     border: 1px solid #e2e8f0;
-    border-radius: 5px;
+    border-radius: 3px;
     padding: 20px;
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
 }
@@ -3678,7 +3678,7 @@ td small {
     width: 100%;
     max-width: 1040px;
     height: 92vh;
-    border-radius: 16px;
+    border-radius: 4px;
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -3713,9 +3713,9 @@ td small {
 }
 
 .print-modal-icon-badge {
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
+    width: 38px;
+    height: 38px;
+    border-radius: 4px;
     background: rgba(16, 185, 129, 0.18);
     border: 1px solid rgba(16, 185, 129, 0.35);
     color: #34d399;
@@ -3750,7 +3750,7 @@ td small {
     font-size: 11px;
     font-weight: 700;
     padding: 2px 8px;
-    border-radius: 9999px;
+    border-radius: 3px;
     border: 1px solid rgba(167, 243, 208, 0.25);
     white-space: nowrap;
     max-width: 260px;
@@ -3773,8 +3773,8 @@ td small {
 .print-modal-page-toggle {
     display: inline-flex;
     background: rgba(0, 0, 0, 0.25);
-    padding: 3px;
-    border-radius: 8px;
+    padding: 2px;
+    border-radius: 4px;
     border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
@@ -3786,7 +3786,7 @@ td small {
     font-size: 12px;
     font-weight: 700;
     padding: 6px 14px;
-    border-radius: 6px;
+    border-radius: 3px;
     cursor: pointer;
     transition: all 0.15s ease;
 }
@@ -3809,7 +3809,7 @@ td small {
     background: rgba(0, 0, 0, 0.25);
     color: #e2e8f0;
     border: 1px solid rgba(255, 255, 255, 0.14);
-    border-radius: 8px;
+    border-radius: 4px;
     padding: 6px 12px;
     font-size: 12px;
     font-weight: 600;
@@ -3834,7 +3834,7 @@ td small {
     color: #ffffff;
     border: 1px solid #059669;
     padding: 8px 18px;
-    border-radius: 8px;
+    border-radius: 4px;
     font-size: 13px;
     font-weight: 800;
     cursor: pointer;
@@ -3861,9 +3861,9 @@ td small {
 }
 
 .btn-print-modal-close {
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
+    width: 34px;
+    height: 34px;
+    border-radius: 4px;
     background: rgba(255, 255, 255, 0.1);
     border: 1px solid rgba(255, 255, 255, 0.15);
     color: #ffffff;
