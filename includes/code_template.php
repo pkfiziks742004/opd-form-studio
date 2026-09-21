@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/settings.php';
+require_once __DIR__ . '/page_engine.php';
 
 function get_motherland_defaults(): array {
     return [
@@ -121,8 +122,12 @@ function save_motherland_config(array $data): void {
     }
 }
 
-function render_motherland_opd(array $patient, array $config = [], bool $isPreview = false, array $layout = [], int $pages = 0): string {
+function render_motherland_opd(array $patient, array $config = [], bool $isPreview = false, array $layout = [], int $pages = 0, ?array $template = null): string {
     $cfg = array_merge(get_motherland_config(), $config);
+    $pageConfig = get_template_page_config($template ?: []);
+    $pageWidthStr = $pageConfig['width'] . $pageConfig['unit'];
+    $pageHeightStr = $pageConfig['height'] . $pageConfig['unit'];
+    $pagePadStr = "{$pageConfig['marginTop']}{$pageConfig['unit']} {$pageConfig['marginRight']}{$pageConfig['unit']} {$pageConfig['marginBottom']}{$pageConfig['unit']} {$pageConfig['marginLeft']}{$pageConfig['unit']}";
 
     // Resolve number of pages
     if ($pages <= 0) {
@@ -212,7 +217,7 @@ function render_motherland_opd(array $patient, array $config = [], bool $isPrevi
     <!-- ========================================== -->
     <!-- PAGE 1: FULL OPD CONSULTATION PAPER        -->
     <!-- ========================================== -->
-    <div class="motherland-sheet page-1 <?= $isPreview ? 'is-preview' : '' ?>" id="motherlandSheet" style="--ml-wm-opacity: <?= $wmOpacity ?>; --ml-wm-size: <?= $wmSize ?>mm;">
+    <div class="motherland-sheet page-1 <?= $isPreview ? 'is-preview' : '' ?>" id="motherlandSheet" style="--ml-wm-opacity: <?= $wmOpacity ?>; --ml-wm-size: <?= $wmSize ?>mm; --ml-page-width: <?= $pageWidthStr ?>; --ml-page-height: <?= $pageHeightStr ?>; --ml-page-padding: <?= $pagePadStr ?>;">
         <!-- Top Left Accent Bar -->
         <?php if (!empty($cfg['show_header'])): ?>
             <div class="ml-top-accent" style="background-color: <?= htmlspecialchars($cfg['accent_color'], ENT_QUOTES, 'UTF-8') ?>; height: <?= $accentHeight ?>mm;"></div>
@@ -484,7 +489,7 @@ function render_motherland_opd(array $patient, array $config = [], bool $isPrevi
     <!-- PAGE 2: CONTINUATION SHEET (ONLY HEADER & FOOTER, NO PATIENT / VITALS)    -->
     <!-- ========================================================================= -->
     <?php if ($pages >= 2 && !$isPreview): ?>
-        <div class="motherland-sheet page-2" style="--ml-wm-opacity: <?= $wmOpacity ?>; --ml-wm-size: <?= $wmSize ?>mm;">
+        <div class="motherland-sheet page-2" style="--ml-wm-opacity: <?= $wmOpacity ?>; --ml-wm-size: <?= $wmSize ?>mm; --ml-page-width: <?= $pageWidthStr ?>; --ml-page-height: <?= $pageHeightStr ?>; --ml-page-padding: <?= $pagePadStr ?>;">
             <!-- Top Left Accent Bar -->
             <?php if (!empty($cfg['show_header'])): ?>
                 <div class="ml-top-accent" style="background-color: <?= htmlspecialchars($cfg['accent_color'], ENT_QUOTES, 'UTF-8') ?>; height: <?= $accentHeight ?>mm;"></div>
@@ -569,16 +574,16 @@ function render_motherland_opd(array $patient, array $config = [], bool $isPrevi
 
 function get_motherland_opd_css(): string {
     return <<<'CSS'
-/* Motherland Hospital OPD Form CSS - 100% Exact Matching A4 Design */
+/* Motherland Hospital OPD Form CSS - Dynamic Universal Page Architecture */
 .motherland-sheet {
     position: relative;
-    width: 210mm;
-    height: 297mm;
-    max-height: 297mm;
+    width: var(--ml-page-width, 210mm);
+    height: var(--ml-page-height, 297mm);
+    max-height: var(--ml-page-height, 297mm);
     margin: 0 auto;
     background: #ffffff;
     box-sizing: border-box;
-    padding: 6mm 12mm 6mm 12mm;
+    padding: var(--ml-page-padding, 6mm 12mm 6mm 12mm);
     font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
     color: #111111;
     overflow: hidden;
@@ -1036,10 +1041,10 @@ function get_motherland_opd_css(): string {
     .motherland-sheet {
         box-shadow: none !important;
         margin: 0 !important;
-        width: 210mm !important;
-        height: 297mm !important;
-        max-height: 297mm !important;
-        padding: 6mm 12mm 6mm 12mm !important;
+        width: var(--ml-page-width, 210mm) !important;
+        height: var(--ml-page-height, 297mm) !important;
+        max-height: var(--ml-page-height, 297mm) !important;
+        padding: var(--ml-page-padding, 6mm 12mm 6mm 12mm) !important;
         page-break-after: always !important;
         break-after: page !important;
         overflow: hidden !important;

@@ -4,6 +4,7 @@ $user = require_login();
 require_once __DIR__ . '/includes/settings.php';
 require_once __DIR__ . '/includes/layout.php';
 require_once __DIR__ . '/includes/code_template.php';
+require_once __DIR__ . '/includes/page_engine.php';
 
 $templates = db()->query('SELECT * FROM templates WHERE active=1 ORDER BY id ASC')->fetchAll();
 $tid = (int)($_GET['template_id'] ?? 0);
@@ -31,6 +32,8 @@ $layout = $tpl ? get_layout($tpl, (int)$user['id']) : [];
 $perm = field_permissions((int)$user['id']);
 
 $cfg = get_motherland_config();
+$pageConfig = $tpl ? get_template_page_config($tpl) : null;
+$paperPresets = get_paper_presets();
 
 // Default positions for code template blocks
 $defaultCodeLayout = [
@@ -78,8 +81,8 @@ require_once __DIR__ . '/includes/header.php';
                 <?php if ($user['role'] === 'admin'): ?>
                     <a href="templates.php" class="btn btn-soft">Edit Text & Logo</a>
                 <?php endif; ?>
-                <a href="print_opd.php?template_id=<?= $tpl['id'] ?>" class="btn btn-soft">Preview A4</a>
             <?php endif; ?>
+            <a href="print_opd.php?template_id=<?= $tpl['id'] ?>" class="btn btn-soft" id="previewBtn">Preview (<?= e($pageConfig['pageSize'] ?? 'A4') ?>)</a>
             <button class="btn btn-soft" id="resetLayout">Reset</button>
             <button class="btn btn-primary" id="saveLayout">Save my layout</button>
         </div>
@@ -87,26 +90,120 @@ require_once __DIR__ . '/includes/header.php';
 
     <div class="editor-grid">
         <!-- Sidebar Palette -->
-        <section class="card field-palette">
-            <?php if ($isCode): ?>
-                <h3>Sections</h3>
-                <p>Drag any block on the paper in real-time.</p>
-                <?php foreach ($codeBlocks as $k => $label): ?>
-                    <button type="button" class="palette-item" data-focus-field="<?= e($k) ?>"><?= e($label) ?></button>
-                <?php endforeach; ?>
-                <hr>
-                <label>Section width<input type="range" id="fieldWidth" min="150" max="760" value="720"><span id="fieldWidthValue">720 px</span></label>
-            <?php else: ?>
-                <h3>Fields</h3>
-                <p>Drag items on the paper. Blocked fields are hidden.</p>
-                <?php foreach (FIELD_DEFS as $k => $label): if (empty($perm[$k]['visible'])) continue; ?>
-                    <button type="button" class="palette-item" data-focus-field="<?= e($k) ?>"><?= e($label) ?></button>
-                <?php endforeach; ?>
-                <hr>
-                <label>Font size<input type="range" id="fontSize" min="8" max="28" value="12"><span id="fontSizeValue">12 px</span></label>
-                <label>Field width<input type="range" id="fieldWidth" min="60" max="420" value="220"><span id="fieldWidthValue">220 px</span></label>
-            <?php endif; ?>
-        </section>
+        <aside class="editor-sidebar-stack" style="display:flex;flex-direction:column;gap:18px;">
+            <!-- 1. Dedicated Page Settings Panel -->
+            <section class="card field-palette page-settings-panel">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+                    <h3 style="margin:0;font-size:15px;color:#0f2e2a;">📄 Page Settings</h3>
+                    <span id="badgePagePreset" style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:12px;background:#e6f4ea;color:#0d652d;border:1px solid #ceead6;">
+                        <?= e($pageConfig['pageSize']) ?>
+                    </span>
+                </div>
+
+                <div style="margin-bottom:12px;">
+                    <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;">Paper Size</label>
+                    <select id="pageSizeSelect" style="width:100%;padding:7px 10px;border-radius:4px;border:1px solid #cbd5e1;font-size:13px;">
+                        <?php foreach ($paperPresets as $pk => $pv): ?>
+                            <option value="<?= $pk ?>" <?= ($pageConfig['pageSize'] === $pk) ? 'selected' : '' ?> data-w="<?= $pv['width'] ?>" data-h="<?= $pv['height'] ?>" data-u="<?= $pv['unit'] ?>">
+                                <?= $pv['name'] ?> — <?= $pv['desc'] ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <div style="margin-bottom:12px;">
+                    <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;">Orientation</label>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                        <button type="button" id="btnOrientPortrait" class="btn btn-sm <?= ($pageConfig['orientation'] === 'portrait') ? 'btn-primary' : 'btn-soft' ?>" style="text-align:center;padding:6px 0;">
+                            ↕ Portrait
+                        </button>
+                        <button type="button" id="btnOrientLandscape" class="btn btn-sm <?= ($pageConfig['orientation'] === 'landscape') ? 'btn-primary' : 'btn-soft' ?>" style="text-align:center;padding:6px 0;">
+                            ↔ Landscape
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Custom Dimensions (Shown only when Custom is chosen) -->
+                <div id="customDimensionsWrap" style="display: <?= ($pageConfig['pageSize'] === 'Custom') ? 'block' : 'none' ?>;margin-bottom:12px;background:#f8fafc;padding:10px;border-radius:4px;border:1px solid #e2e8f0;">
+                    <label style="font-size:11.5px;font-weight:700;color:#334155;margin-bottom:6px;display:block;">Custom Dimensions</label>
+                    <div style="display:grid;grid-template-columns:1fr 1fr 75px;gap:6px;">
+                        <div>
+                            <span style="font-size:11px;color:#64748b;">Width</span>
+                            <input type="number" step="0.1" id="customWidth" value="<?= $pageConfig['baseWidth'] ?>" style="width:100%;padding:5px 7px;border-radius:4px;border:1px solid #cbd5e1;font-size:12px;">
+                        </div>
+                        <div>
+                            <span style="font-size:11px;color:#64748b;">Height</span>
+                            <input type="number" step="0.1" id="customHeight" value="<?= $pageConfig['baseHeight'] ?>" style="width:100%;padding:5px 7px;border-radius:4px;border:1px solid #cbd5e1;font-size:12px;">
+                        </div>
+                        <div>
+                            <span style="font-size:11px;color:#64748b;">Unit</span>
+                            <select id="customUnit" style="width:100%;padding:5px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:12px;">
+                                <option value="mm" <?= $pageConfig['unit'] === 'mm' ? 'selected' : '' ?>>mm</option>
+                                <option value="cm" <?= $pageConfig['unit'] === 'cm' ? 'selected' : '' ?>>cm</option>
+                                <option value="in" <?= $pageConfig['unit'] === 'in' ? 'selected' : '' ?>>inch</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Margins -->
+                <div style="margin-bottom:12px;">
+                    <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;">
+                        Margins (<span id="marginUnitLabel"><?= $pageConfig['unit'] ?></span>)
+                    </label>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                        <div>
+                            <span style="font-size:11px;color:#64748b;">Top</span>
+                            <input type="number" step="0.5" id="marginTop" value="<?= $pageConfig['marginTop'] ?>" style="width:100%;padding:5px 7px;border-radius:4px;border:1px solid #cbd5e1;font-size:12px;">
+                        </div>
+                        <div>
+                            <span style="font-size:11px;color:#64748b;">Right</span>
+                            <input type="number" step="0.5" id="marginRight" value="<?= $pageConfig['marginRight'] ?>" style="width:100%;padding:5px 7px;border-radius:4px;border:1px solid #cbd5e1;font-size:12px;">
+                        </div>
+                        <div>
+                            <span style="font-size:11px;color:#64748b;">Bottom</span>
+                            <input type="number" step="0.5" id="marginBottom" value="<?= $pageConfig['marginBottom'] ?>" style="width:100%;padding:5px 7px;border-radius:4px;border:1px solid #cbd5e1;font-size:12px;">
+                        </div>
+                        <div>
+                            <span style="font-size:11px;color:#64748b;">Left</span>
+                            <input type="number" step="0.5" id="marginLeft" value="<?= $pageConfig['marginLeft'] ?>" style="width:100%;padding:5px 7px;border-radius:4px;border:1px solid #cbd5e1;font-size:12px;">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Live Metrics Badge -->
+                <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:8px 10px;margin-bottom:10px;font-size:11.5px;color:#166534;line-height:1.45;">
+                    <div><strong>Page Size:</strong> <span id="metricDimensions"><?= $pageConfig['width'] ?> × <?= $pageConfig['height'] ?> <?= $pageConfig['unit'] ?></span></div>
+                    <div><strong>Printable:</strong> <span id="metricPrintable"><?= $pageConfig['contentWidth'] ?> × <?= $pageConfig['contentHeight'] ?> <?= $pageConfig['unit'] ?></span></div>
+                </div>
+
+                <button type="button" class="btn btn-soft btn-sm" id="btnSavePageSettings" style="width:100%;font-weight:600;">
+                    Save Page Settings
+                </button>
+            </section>
+
+            <!-- 2. Sections / Fields Layout Palette -->
+            <section class="card field-palette">
+                <?php if ($isCode): ?>
+                    <h3>Sections</h3>
+                    <p>Drag any block on the paper in real-time.</p>
+                    <?php foreach ($codeBlocks as $k => $label): ?>
+                        <button type="button" class="palette-item" data-focus-field="<?= e($k) ?>"><?= e($label) ?></button>
+                    <?php endforeach; ?>
+                    <hr>
+                    <label>Section width<input type="range" id="fieldWidth" min="150" max="760" value="720"><span id="fieldWidthValue">720 px</span></label>
+                <?php else: ?>
+                    <h3>Fields</h3>
+                    <p>Drag items on the paper. Blocked fields are hidden.</p>
+                    <?php foreach (FIELD_DEFS as $k => $label): if (empty($perm[$k]['visible'])) continue; ?>
+                        <button type="button" class="palette-item" data-focus-field="<?= e($k) ?>"><?= e($label) ?></button>
+                    <?php endforeach; ?>
+                    <hr>
+                    <label>Font size<input type="range" id="fontSize" min="8" max="28" value="12"><span id="fontSizeValue">12 px</span></label>
+                    <label>Field width<input type="range" id="fieldWidth" min="60" max="420" value="220"><span id="fieldWidthValue">220 px</span></label>
+                <?php endif; ?>
+            </section>
+        </aside>
 
         <!-- Canvas Area -->
         <section class="card canvas-card">
@@ -117,10 +214,12 @@ require_once __DIR__ . '/includes/header.php';
                         background: #ffffff;
                         position: relative;
                         width: 100%;
-                        aspect-ratio: 210/297;
+                        aspect-ratio: <?= $pageConfig['width'] ?> / <?= $pageConfig['height'] ?>;
                         border: 1px solid #ccd9d6;
                         box-shadow: 0 12px 30px rgba(18,53,44,0.1);
                         overflow: hidden;
+                        padding: <?= $pageConfig['marginTop'] . $pageConfig['unit'] ?> <?= $pageConfig['marginRight'] . $pageConfig['unit'] ?> <?= $pageConfig['marginBottom'] . $pageConfig['unit'] ?> <?= $pageConfig['marginLeft'] . $pageConfig['unit'] ?>;
+                        transition: aspect-ratio 0.25s ease, padding 0.2s ease;
                     }
                     .draggable-block-item {
                         position: absolute;
@@ -251,14 +350,16 @@ require_once __DIR__ . '/includes/header.php';
                     window.EDITOR_DATA = {
                         templateId: <?= $tpl['id'] ?>,
                         csrf: '<?= csrf_token() ?>',
-                        defaultLayout: <?= json_encode($defaultCodeLayout) ?>
+                        defaultLayout: <?= json_encode($defaultCodeLayout) ?>,
+                        pageConfig: <?= json_encode($pageConfig) ?>,
+                        paperPresets: <?= json_encode($paperPresets) ?>
                     };
                 </script>
                 <script src="assets/js/template-editor.js"></script>
 
             <?php else: ?>
                 <!-- Image Template Canvas -->
-                <div class="layout-paper" id="layoutPaper" style="background-image:url('<?= e($tpl['file_path']) ?>')">
+                <div class="layout-paper" id="layoutPaper" style="background-image:url('<?= e($tpl['file_path']) ?>');aspect-ratio:<?= $pageConfig['width'] ?>/<?= $pageConfig['height'] ?>;padding:<?= $pageConfig['marginTop'] . $pageConfig['unit'] ?> <?= $pageConfig['marginRight'] . $pageConfig['unit'] ?> <?= $pageConfig['marginBottom'] . $pageConfig['unit'] ?> <?= $pageConfig['marginLeft'] . $pageConfig['unit'] ?>;">
                     <?php foreach ($layout as $k => $pos): if (!isset(FIELD_DEFS[$k]) || empty($perm[$k]['visible'])) continue; ?>
                         <div class="draggable-field" data-field="<?= e($k) ?>" style="left:<?= floatval($pos['x'] ?? 5) ?>%;top:<?= floatval($pos['y'] ?? 5) ?>%;font-size:<?= intval($pos['fontSize'] ?? 12) ?>px;width:<?= intval($pos['width'] ?? 220) ?>px;font-weight:<?= e($pos['fontWeight'] ?? '500') ?>">
                             <?= e(FIELD_DEFS[$k]) ?> <span>Sample</span>
@@ -269,7 +370,9 @@ require_once __DIR__ . '/includes/header.php';
                     window.EDITOR_DATA = {
                         templateId: <?= $tpl['id'] ?>,
                         csrf: '<?= csrf_token() ?>',
-                        defaultLayout: <?= json_encode(json_decode($tpl['default_layout_json'] ?: '{}', true)) ?>
+                        defaultLayout: <?= json_encode(json_decode($tpl['default_layout_json'] ?: '{}', true)) ?>,
+                        pageConfig: <?= json_encode($pageConfig) ?>,
+                        paperPresets: <?= json_encode($paperPresets) ?>
                     };
                 </script>
                 <script src="assets/js/template-editor.js"></script>

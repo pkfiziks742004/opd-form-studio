@@ -45,6 +45,7 @@ if (!$tpl) {
 $isCode = is_code_template($tpl);
 $layout = get_layout($tpl, (int)$user['id']);
 $perm = field_permissions((int)$user['id']);
+$pageConfig = get_template_page_config($tpl);
 
 $cfg = get_motherland_config();
 if ($pages <= 0) {
@@ -216,134 +217,7 @@ $allTemplates = db()->query('SELECT id, name, template_type, file_path FROM temp
         }
 
         <?= get_motherland_opd_css() ?>
-
-        *, *::before, *::after {
-            box-sizing: border-box;
-        }
-
-        @page {
-            size: A4 portrait;
-            margin: 0;
-        }
-
-        @media print {
-            *, *::before, *::after {
-                box-sizing: border-box !important;
-            }
-            html, body {
-                width: 210mm !important;
-                margin: 0 !important;
-                padding: 0 !important;
-                background: #fff !important;
-                font-size: 0 !important;
-                line-height: 0 !important;
-                -webkit-print-color-adjust: exact !important;
-                print-color-adjust: exact !important;
-            }
-            .toolbar {
-                display: none !important;
-            }
-            .sheet {
-                position: relative !important;
-                margin: 0 !important;
-                box-shadow: none !important;
-                border: none !important;
-                width: 210mm !important;
-                height: 297mm !important;
-                box-sizing: border-box !important;
-                overflow: hidden !important;
-                font-size: 12px !important;
-                line-height: 1.2 !important;
-                page-break-after: auto !important;
-                break-after: auto !important;
-                -webkit-print-color-adjust: exact !important;
-                print-color-adjust: exact !important;
-            }
-            .code-sheet-wrapper {
-                display: block !important;
-                margin: 0 !important;
-                padding: 0 !important;
-                box-shadow: none !important;
-                border: none !important;
-                background: transparent !important;
-                font-size: 0 !important;
-                line-height: 0 !important;
-                gap: 0 !important;
-            }
-            .motherland-sheet {
-                position: relative !important;
-                margin: 0 !important;
-                box-shadow: none !important;
-                border: none !important;
-                width: 210mm !important;
-                height: 297mm !important;
-                max-height: 297mm !important;
-                padding: 6mm 12mm 6mm 12mm !important;
-                font-size: 9.2pt !important;
-                line-height: 1.4 !important;
-                page-break-after: always !important;
-                break-after: page !important;
-                -webkit-print-color-adjust: exact !important;
-                print-color-adjust: exact !important;
-                overflow: hidden !important;
-                box-sizing: border-box !important;
-                display: flex !important;
-                flex-direction: column !important;
-            }
-            .motherland-sheet:last-child {
-                page-break-after: auto !important;
-                break-after: auto !important;
-            }
-            .motherland-sheet.page-2 {
-                page-break-before: auto !important;
-                break-before: auto !important;
-                margin: 0 !important;
-            }
-            .ml-consultation-body {
-                flex: 1 1 auto !important;
-                min-height: 40mm !important;
-            }
-            .ml-bottom-meta-row {
-                display: flex !important;
-                justify-content: space-between !important;
-                align-items: flex-end !important;
-                margin-top: auto !important;
-                margin-bottom: 2mm !important;
-                flex-shrink: 0 !important;
-                page-break-inside: avoid !important;
-                break-inside: avoid !important;
-            }
-            .ml-validity-section {
-                flex: 1 !important;
-                margin: 0 !important;
-                page-break-inside: avoid !important;
-                break-inside: avoid !important;
-            }
-            .ml-sign-section {
-                width: 48mm !important;
-                text-align: center !important;
-                flex-shrink: 0 !important;
-                page-break-inside: avoid !important;
-                break-inside: avoid !important;
-            }
-            .ml-footer-rule {
-                border-top: 1.2pt solid #02872e !important;
-                margin: 1.5mm 0 2mm 0 !important;
-                flex-shrink: 0 !important;
-                page-break-inside: avoid !important;
-                break-inside: avoid !important;
-            }
-            .ml-footer {
-                flex-shrink: 0 !important;
-                page-break-inside: avoid !important;
-                break-inside: avoid !important;
-            }
-            .ml-footer-contact,
-            .ml-footer-online {
-                border-left: none !important;
-                padding-left: 0 !important;
-            }
-        }
+        <?= generate_template_page_css($tpl, $isModal) ?>
 
         <?php if ($isModal): ?>
         @media screen {
@@ -384,6 +258,9 @@ $allTemplates = db()->query('SELECT id, name, template_type, file_path FROM temp
             <?php endforeach; ?>
         </select>
         <?php endif; ?>
+        <span style="font-size:11.5px;background:rgba(255,255,255,0.12);padding:4px 9px;border-radius:4px;color:#cbd5e1;border:1px solid rgba(255,255,255,0.18);white-space:nowrap;" title="Template Paper Size">
+            📄 <?= e($pageConfig['label']) ?> (<?= $pageConfig['width'] ?>×<?= $pageConfig['height'] ?> <?= $pageConfig['unit'] ?>)
+        </span>
     </div>
     <div class="toolbar-actions">
         <!-- 1 Page / 2 Pages Toggle -->
@@ -422,7 +299,7 @@ document.addEventListener('keydown', function(e) {
 
 <?php if ($isCode): ?>
     <div class="code-sheet-wrapper">
-        <?= render_motherland_opd($p, [], false, $layout, $pages) ?>
+        <?= render_motherland_opd($p, [], false, $layout, $pages, $tpl) ?>
     </div>
 <?php else: ?>
     <div class="sheet" style="background-image:url('<?= e($tpl['file_path']) ?>')">

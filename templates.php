@@ -4,6 +4,7 @@ $user = require_admin();
 require_once __DIR__ . '/includes/settings.php';
 require_once __DIR__ . '/includes/layout.php';
 require_once __DIR__ . '/includes/code_template.php';
+require_once __DIR__ . '/includes/page_engine.php';
 
 // Handle POST actions
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
@@ -81,7 +82,57 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         }
 
         save_motherland_config($configData);
-        flash('success', 'Motherland code template settings saved successfully.');
+
+        // Save Universal Page Settings
+        if (isset($_POST['page_size'])) {
+            $presets = get_paper_presets();
+            $pageSize = trim((string)$_POST['page_size']);
+            if (!isset($presets[$pageSize])) $pageSize = 'A4';
+            $orientation = strtolower(trim((string)($_POST['orientation'] ?? 'portrait')));
+            if ($orientation !== 'landscape') $orientation = 'portrait';
+            $unit = strtolower(trim((string)($_POST['page_unit'] ?? 'mm')));
+            if (!in_array($unit, ['mm', 'cm', 'in', 'inch'], true)) $unit = 'mm';
+
+            if ($pageSize !== 'Custom' && isset($presets[$pageSize])) {
+                $pageWidth = (float)$presets[$pageSize]['width'];
+                $pageHeight = (float)$presets[$pageSize]['height'];
+                $pageUnit = $presets[$pageSize]['unit'];
+            } else {
+                $pageWidth = max(50.0, min(1000.0, (float)($_POST['page_width'] ?? 210.0)));
+                $pageHeight = max(50.0, min(1500.0, (float)($_POST['page_height'] ?? 297.0)));
+                $pageUnit = $unit;
+            }
+
+            $marginTop = max(0.0, min(100.0, (float)($_POST['margin_top'] ?? 6.0)));
+            $marginRight = max(0.0, min(100.0, (float)($_POST['margin_right'] ?? 12.0)));
+            $marginBottom = max(0.0, min(100.0, (float)($_POST['margin_bottom'] ?? 6.0)));
+            $marginLeft = max(0.0, min(100.0, (float)($_POST['margin_left'] ?? 12.0)));
+
+            $pageConfigJson = json_encode([
+                'pageSize' => $pageSize,
+                'orientation' => $orientation,
+                'width' => $pageWidth,
+                'height' => $pageHeight,
+                'unit' => $pageUnit,
+                'marginTop' => $marginTop,
+                'marginRight' => $marginRight,
+                'marginBottom' => $marginBottom,
+                'marginLeft' => $marginLeft,
+                'updated_at' => date('Y-m-d H:i:s')
+            ]);
+
+            ensure_template_page_columns();
+            $targetTplId = (int)($_POST['template_id'] ?? 0);
+            if ($targetTplId > 0) {
+                $upSt = db()->prepare('UPDATE templates SET 
+                    page_size = ?, orientation = ?, page_width = ?, page_height = ?, page_unit = ?,
+                    margin_top = ?, margin_right = ?, margin_bottom = ?, margin_left = ?, page_config_json = ?
+                    WHERE id = ?');
+                $upSt->execute([$pageSize, $orientation, $pageWidth, $pageHeight, $pageUnit, $marginTop, $marginRight, $marginBottom, $marginLeft, $pageConfigJson, $targetTplId]);
+            }
+        }
+
+        flash('success', 'Motherland template and page size settings saved successfully.');
         header('Location: templates.php');
         exit;
     }
@@ -134,6 +185,9 @@ $defaultTemplateId = (int)setting('default_template_id', '0');
 
 $cfg = get_motherland_config();
 $motherlandTpl = reset($codeTemplates) ?: null;
+$pageConfig = $motherlandTpl ? get_template_page_config($motherlandTpl) : null;
+$paperPresets = get_paper_presets();
+$defaultPrintPages = $cfg['default_print_pages'] ?? '1';
 
 require_once __DIR__ . '/includes/header.php';
 ?>
@@ -464,10 +518,103 @@ $defaultPrintPages = (string)($cfg['default_print_pages'] ?? '1');
             </div>
         </div>
 
-        <!-- MAIN SETTINGS FORM (ORGANIZED INTO 8 INTUITIVE CARDS) -->
+        <!-- MAIN SETTINGS FORM (ORGANIZED INTO INTUITIVE CARDS) -->
         <form method="post" enctype="multipart/form-data" id="motherlandConfigForm">
             <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
             <input type="hidden" name="save_code_template" value="1">
+            <input type="hidden" name="template_id" value="<?= $motherlandTpl['id'] ?>">
+
+            <!-- CARD 0: PAPER SIZE & ORIENTATION SETTINGS -->
+            <div class="tpl-card">
+                <div class="tpl-card-head">
+                    <h3 class="tpl-card-title">
+                        <span class="tpl-badge-num">📄</span>
+                        <span>Paper Size & Page Configuration (Universal Print Engine)</span>
+                    </h3>
+                    <span class="tpl-badge-pill" style="background:#e8f8ef; color:#18a96a;">
+                        <?= e($pageConfig['label'] ?? 'A4 Portrait') ?>
+                    </span>
+                </div>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 14px;">
+                    <div>
+                        <label>
+                            Paper Size Preset
+                            <select name="page_size" id="tplPageSizeSelect" style="width:100%;margin-top:4px;" onchange="toggleTplCustomDims(this.value)">
+                                <?php foreach ($paperPresets as $pk => $pv): ?>
+                                    <option value="<?= $pk ?>" <?= ($pageConfig && $pageConfig['pageSize'] === $pk) ? 'selected' : '' ?> data-w="<?= $pv['width'] ?>" data-h="<?= $pv['height'] ?>" data-u="<?= $pv['unit'] ?>">
+                                        <?= $pv['name'] ?> (<?= $pv['desc'] ?>)
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </label>
+                    </div>
+                    <div>
+                        <label>
+                            Orientation
+                            <select name="orientation" id="tplOrientationSelect" style="width:100%;margin-top:4px;">
+                                <option value="portrait" <?= ($pageConfig && $pageConfig['orientation'] === 'portrait') ? 'selected' : '' ?>>↕ Portrait (Vertical)</option>
+                                <option value="landscape" <?= ($pageConfig && $pageConfig['orientation'] === 'landscape') ? 'selected' : '' ?>>↔ Landscape (Horizontal)</option>
+                            </select>
+                        </label>
+                    </div>
+                </div>
+
+                <div id="tplCustomDimsRow" style="display:<?= ($pageConfig && $pageConfig['pageSize'] === 'Custom') ? 'grid' : 'none' ?>; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 14px; background:#f8fafc; padding:12px; border-radius:6px; border:1px solid #e2e8f0;">
+                    <div>
+                        <label>
+                            Custom Width
+                            <input type="number" step="0.1" name="page_width" value="<?= $pageConfig['baseWidth'] ?? 210 ?>">
+                        </label>
+                    </div>
+                    <div>
+                        <label>
+                            Custom Height
+                            <input type="number" step="0.1" name="page_height" value="<?= $pageConfig['baseHeight'] ?? 297 ?>">
+                        </label>
+                    </div>
+                    <div>
+                        <label>
+                            Unit
+                            <select name="page_unit">
+                                <option value="mm" <?= ($pageConfig && $pageConfig['unit'] === 'mm') ? 'selected' : '' ?>>mm (Millimeter)</option>
+                                <option value="cm" <?= ($pageConfig && $pageConfig['unit'] === 'cm') ? 'selected' : '' ?>>cm (Centimeter)</option>
+                                <option value="in" <?= ($pageConfig && $pageConfig['unit'] === 'in') ? 'selected' : '' ?>>in (Inch)</option>
+                            </select>
+                        </label>
+                    </div>
+                </div>
+
+                <div>
+                    <label style="font-weight:700; color:#204036; margin-bottom:6px; display:block;">
+                        Page Margins (<?= e($pageConfig['unit'] ?? 'mm') ?>)
+                    </label>
+                    <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
+                        <div>
+                            <label style="font-size:12px;color:#555;">Top</label>
+                            <input type="number" step="0.5" name="margin_top" value="<?= $pageConfig['marginTop'] ?? 6 ?>">
+                        </div>
+                        <div>
+                            <label style="font-size:12px;color:#555;">Right</label>
+                            <input type="number" step="0.5" name="margin_right" value="<?= $pageConfig['marginRight'] ?? 12 ?>">
+                        </div>
+                        <div>
+                            <label style="font-size:12px;color:#555;">Bottom</label>
+                            <input type="number" step="0.5" name="margin_bottom" value="<?= $pageConfig['marginBottom'] ?? 6 ?>">
+                        </div>
+                        <div>
+                            <label style="font-size:12px;color:#555;">Left</label>
+                            <input type="number" step="0.5" name="margin_left" value="<?= $pageConfig['marginLeft'] ?? 12 ?>">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <script>
+            function toggleTplCustomDims(val) {
+                const row = document.getElementById('tplCustomDimsRow');
+                if (row) row.style.display = (val === 'Custom') ? 'grid' : 'none';
+            }
+            </script>
 
             <!-- CARD 1: PRINT PAGES MODE -->
             <div class="tpl-card">

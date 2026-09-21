@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/code_template.php';
+require_once __DIR__ . '/page_engine.php';
 
 function is_code_template(?array $template): bool {
     if (!$template) return false;
