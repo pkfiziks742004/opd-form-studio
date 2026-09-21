@@ -573,12 +573,12 @@ function get_motherland_opd_css(): string {
 .motherland-sheet {
     position: relative;
     width: 210mm;
-    height: 272mm;
-    max-height: 275mm;
+    height: 297mm;
+    max-height: 297mm;
     margin: 0 auto;
     background: #ffffff;
     box-sizing: border-box;
-    padding: 4mm 10mm 4mm 10mm;
+    padding: 6mm 12mm 6mm 12mm;
     font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
     color: #111111;
     overflow: hidden;
@@ -1030,28 +1030,29 @@ function get_motherland_opd_css(): string {
 }
 
 @media print {
+    *, *::before, *::after {
+        box-sizing: border-box !important;
+    }
     .motherland-sheet {
         box-shadow: none !important;
-        margin: 0 auto !important;
-        height: 270mm !important;
-        max-height: 270mm !important;
-        padding: 4mm 10mm 4mm 10mm !important;
-        page-break-inside: avoid !important;
-        break-inside: avoid !important;
+        margin: 0 !important;
+        width: 210mm !important;
+        height: 297mm !important;
+        max-height: 297mm !important;
+        padding: 6mm 12mm 6mm 12mm !important;
+        page-break-after: always !important;
+        break-after: page !important;
         overflow: hidden !important;
+        box-sizing: border-box !important;
     }
     .motherland-sheet:last-child {
-        page-break-after: avoid !important;
-        break-after: avoid !important;
+        page-break-after: auto !important;
+        break-after: auto !important;
     }
     .motherland-sheet.page-2 {
-        page-break-before: always !important;
-        break-before: page !important;
-        margin: 0 auto !important;
-    }
-    .page-2 {
-        page-break-before: always !important;
-        margin-top: 0 !important;
+        page-break-before: auto !important;
+        break-before: auto !important;
+        margin: 0 !important;
     }
 }
 CSS;

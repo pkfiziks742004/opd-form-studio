@@ -217,18 +217,26 @@ $allTemplates = db()->query('SELECT id, name, template_type, file_path FROM temp
 
         <?= get_motherland_opd_css() ?>
 
+        *, *::before, *::after {
+            box-sizing: border-box;
+        }
+
         @page {
             size: A4 portrait;
-            margin: 0mm !important;
+            margin: 0;
         }
 
         @media print {
+            *, *::before, *::after {
+                box-sizing: border-box !important;
+            }
             html, body {
-                width: 100% !important;
-                height: 100% !important;
+                width: 210mm !important;
                 margin: 0 !important;
                 padding: 0 !important;
                 background: #fff !important;
+                font-size: 0 !important;
+                line-height: 0 !important;
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
             }
@@ -236,12 +244,18 @@ $allTemplates = db()->query('SELECT id, name, template_type, file_path FROM temp
                 display: none !important;
             }
             .sheet {
-                margin: 0 auto !important;
+                position: relative !important;
+                margin: 0 !important;
                 box-shadow: none !important;
+                border: none !important;
                 width: 210mm !important;
-                height: 270mm !important;
-                page-break-after: avoid !important;
-                break-after: avoid !important;
+                height: 297mm !important;
+                box-sizing: border-box !important;
+                overflow: hidden !important;
+                font-size: 12px !important;
+                line-height: 1.2 !important;
+                page-break-after: auto !important;
+                break-after: auto !important;
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
             }
@@ -250,20 +264,25 @@ $allTemplates = db()->query('SELECT id, name, template_type, file_path FROM temp
                 margin: 0 !important;
                 padding: 0 !important;
                 box-shadow: none !important;
+                border: none !important;
                 background: transparent !important;
+                font-size: 0 !important;
+                line-height: 0 !important;
                 gap: 0 !important;
             }
             .motherland-sheet {
-                margin: 0 auto !important;
+                position: relative !important;
+                margin: 0 !important;
                 box-shadow: none !important;
-                width: 100% !important;
-                max-width: 210mm !important;
-                height: 270mm !important;
-                max-height: 270mm !important;
-                min-height: 260mm !important;
-                padding: 4mm 10mm 4mm 10mm !important;
-                page-break-inside: avoid !important;
-                break-inside: avoid !important;
+                border: none !important;
+                width: 210mm !important;
+                height: 297mm !important;
+                max-height: 297mm !important;
+                padding: 6mm 12mm 6mm 12mm !important;
+                font-size: 9.2pt !important;
+                line-height: 1.4 !important;
+                page-break-after: always !important;
+                break-after: page !important;
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
                 overflow: hidden !important;
@@ -271,21 +290,25 @@ $allTemplates = db()->query('SELECT id, name, template_type, file_path FROM temp
                 display: flex !important;
                 flex-direction: column !important;
             }
+            .motherland-sheet:last-child {
+                page-break-after: auto !important;
+                break-after: auto !important;
+            }
             .motherland-sheet.page-2 {
-                page-break-before: always !important;
-                break-before: page !important;
-                margin: 0 auto !important;
+                page-break-before: auto !important;
+                break-before: auto !important;
+                margin: 0 !important;
             }
             .ml-consultation-body {
                 flex: 1 1 auto !important;
-                min-height: 20mm !important;
+                min-height: 40mm !important;
             }
             .ml-bottom-meta-row {
                 display: flex !important;
                 justify-content: space-between !important;
                 align-items: flex-end !important;
                 margin-top: auto !important;
-                margin-bottom: 1.5mm !important;
+                margin-bottom: 2mm !important;
                 flex-shrink: 0 !important;
                 page-break-inside: avoid !important;
                 break-inside: avoid !important;
