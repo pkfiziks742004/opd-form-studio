@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/settings.php';
 require_once __DIR__ . '/page_engine.php';
+require_once __DIR__ . '/theme_engine.php';
 
 function get_motherland_defaults(): array {
     return [
@@ -125,6 +126,8 @@ function save_motherland_config(array $data): void {
 function render_motherland_opd(array $patient, array $config = [], bool $isPreview = false, array $layout = [], int $pages = 0, ?array $template = null): string {
     $cfg = array_merge(get_motherland_config(), $config);
     $pageConfig = get_template_page_config($template ?: []);
+    $theme = get_template_theme($template);
+    $themeStyle = generate_theme_style_attr($theme);
     $pageWidthStr = $pageConfig['width'] . $pageConfig['unit'];
     $pageHeightStr = $pageConfig['height'] . $pageConfig['unit'];
     $pagePadStr = "{$pageConfig['marginTop']}{$pageConfig['unit']} {$pageConfig['marginRight']}{$pageConfig['unit']} {$pageConfig['marginBottom']}{$pageConfig['unit']} {$pageConfig['marginLeft']}{$pageConfig['unit']}";
@@ -217,10 +220,10 @@ function render_motherland_opd(array $patient, array $config = [], bool $isPrevi
     <!-- ========================================== -->
     <!-- PAGE 1: FULL OPD CONSULTATION PAPER        -->
     <!-- ========================================== -->
-    <div class="motherland-sheet page-1 <?= $isPreview ? 'is-preview' : '' ?>" id="motherlandSheet" style="--ml-wm-opacity: <?= $wmOpacity ?>; --ml-wm-size: <?= $wmSize ?>mm; --ml-page-width: <?= $pageWidthStr ?>; --ml-page-height: <?= $pageHeightStr ?>; --ml-page-padding: <?= $pagePadStr ?>;">
+    <div class="motherland-sheet page-1 <?= $isPreview ? 'is-preview' : '' ?>" id="motherlandSheet" style="<?= $themeStyle ?>--ml-wm-opacity: <?= $wmOpacity ?>; --ml-wm-size: <?= $wmSize ?>mm; --ml-page-width: <?= $pageWidthStr ?>; --ml-page-height: <?= $pageHeightStr ?>; --ml-page-padding: <?= $pagePadStr ?>;">
         <!-- Top Left Accent Bar -->
         <?php if (!empty($cfg['show_header'])): ?>
-            <div class="ml-top-accent" style="background-color: <?= htmlspecialchars($cfg['accent_color'], ENT_QUOTES, 'UTF-8') ?>; height: <?= $accentHeight ?>mm;"></div>
+            <div class="ml-top-accent" style="height: <?= $accentHeight ?>mm;"></div>
         <?php endif; ?>
 
         <!-- Watermark (Customizable Position & Size) -->
@@ -439,7 +442,7 @@ function render_motherland_opd(array $patient, array $config = [], bool $isPrevi
                 <!-- Hospital & Office Address -->
                 <div class="ml-footer-col ml-footer-address">
                     <div class="ml-footer-item">
-                        <svg class="ml-icon" viewBox="0 0 24 24" fill="#02872e">
+                        <svg class="ml-icon" viewBox="0 0 24 24" fill="var(--ml-icon, #02872e)">
                             <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 0 1 0-5 2.5 2.5 0 0 1 0 5z"/>
                         </svg>
                         <div class="ml-footer-text">
@@ -452,13 +455,13 @@ function render_motherland_opd(array $patient, array $config = [], bool $isPrevi
                 <!-- WhatsApp & Phone Numbers -->
                 <div class="ml-footer-col ml-footer-contact">
                     <div class="ml-footer-item">
-                        <svg class="ml-icon" viewBox="0 0 24 24" fill="#02872e">
+                        <svg class="ml-icon" viewBox="0 0 24 24" fill="var(--ml-icon, #02872e)">
                             <path d="M16.75 13.96c.25.13.41.2.46.3.06.11.04.61-.21 1.18-.25.56-1.23 1.1-1.74 1.15-.46.04-1.02.07-2.06-.34-1.49-.59-2.73-1.63-3.69-2.77-.97-1.14-1.72-2.51-1.89-3.08-.18-.58-.02-.9.12-1.17.13-.25.29-.48.44-.65.15-.17.29-.26.39-.26.11 0 .22 0 .32.01.12.01.27-.04.42.33.15.37.52 1.28.57 1.38.05.1.08.22.02.34-.06.12-.13.23-.22.34-.1.1-.2.23-.29.33-.1.1-.21.21-.09.42.12.21.54.89 1.16 1.44.8.71 1.48.93 1.69 1.04.21.11.33.09.45-.05.13-.14.54-.63.69-.85.14-.21.3-.18.5-.1.21.08 1.32.62 1.55.73zM12 2a10 10 0 0 0-8.66 15L2 22l5.17-1.32A10 10 0 1 0 12 2z"/>
                         </svg>
                         <span><?= htmlspecialchars($cfg['phone_whatsapp'], ENT_QUOTES, 'UTF-8') ?></span>
                     </div>
                     <div class="ml-footer-item">
-                        <svg class="ml-icon" viewBox="0 0 24 24" fill="#02872e">
+                        <svg class="ml-icon" viewBox="0 0 24 24" fill="var(--ml-icon, #02872e)">
                             <path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 0 0-1.01.24l-2.2 2.2a15.053 15.053 0 0 1-6.59-6.59l2.2-2.21a.96.96 0 0 0 .25-1.01A11.36 11.36 0 0 1 8.57 3.9c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.52c0-.55-.45-1-.99-1z"/>
                         </svg>
                         <span><?= htmlspecialchars($cfg['phone_landline'], ENT_QUOTES, 'UTF-8') ?></span>
@@ -468,13 +471,13 @@ function render_motherland_opd(array $patient, array $config = [], bool $isPrevi
                 <!-- Email & Website -->
                 <div class="ml-footer-col ml-footer-online">
                     <div class="ml-footer-item">
-                        <svg class="ml-icon" viewBox="0 0 24 24" fill="#02872e">
+                        <svg class="ml-icon" viewBox="0 0 24 24" fill="var(--ml-icon, #02872e)">
                             <path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/>
                         </svg>
                         <span><?= htmlspecialchars($cfg['email'], ENT_QUOTES, 'UTF-8') ?></span>
                     </div>
                     <div class="ml-footer-item">
-                        <svg class="ml-icon" viewBox="0 0 24 24" fill="#02872e">
+                        <svg class="ml-icon" viewBox="0 0 24 24" fill="var(--ml-icon, #02872e)">
                             <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
                         </svg>
                         <span><?= htmlspecialchars($cfg['website'], ENT_QUOTES, 'UTF-8') ?></span>
@@ -489,10 +492,10 @@ function render_motherland_opd(array $patient, array $config = [], bool $isPrevi
     <!-- PAGE 2: CONTINUATION SHEET (ONLY HEADER & FOOTER, NO PATIENT / VITALS)    -->
     <!-- ========================================================================= -->
     <?php if ($pages >= 2 && !$isPreview): ?>
-        <div class="motherland-sheet page-2" style="--ml-wm-opacity: <?= $wmOpacity ?>; --ml-wm-size: <?= $wmSize ?>mm; --ml-page-width: <?= $pageWidthStr ?>; --ml-page-height: <?= $pageHeightStr ?>; --ml-page-padding: <?= $pagePadStr ?>;">
+        <div class="motherland-sheet page-2" style="<?= $themeStyle ?>--ml-wm-opacity: <?= $wmOpacity ?>; --ml-wm-size: <?= $wmSize ?>mm; --ml-page-width: <?= $pageWidthStr ?>; --ml-page-height: <?= $pageHeightStr ?>; --ml-page-padding: <?= $pagePadStr ?>;">
             <!-- Top Left Accent Bar -->
             <?php if (!empty($cfg['show_header'])): ?>
-                <div class="ml-top-accent" style="background-color: <?= htmlspecialchars($cfg['accent_color'], ENT_QUOTES, 'UTF-8') ?>; height: <?= $accentHeight ?>mm;"></div>
+                <div class="ml-top-accent" style="height: <?= $accentHeight ?>mm;"></div>
             <?php endif; ?>
 
             <!-- Watermark (Customizable Position & Size) -->
@@ -526,7 +529,7 @@ function render_motherland_opd(array $patient, array $config = [], bool $isPrevi
                 <div class="ml-footer">
                     <div class="ml-footer-col ml-footer-address">
                         <div class="ml-footer-item">
-                            <svg class="ml-icon" viewBox="0 0 24 24" fill="#02872e">
+                            <svg class="ml-icon" viewBox="0 0 24 24" fill="var(--ml-icon, #02872e)">
                                 <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 0 1 0-5 2.5 2.5 0 0 1 0 5z"/>
                             </svg>
                             <div class="ml-footer-text">
@@ -537,13 +540,13 @@ function render_motherland_opd(array $patient, array $config = [], bool $isPrevi
                     </div>
                     <div class="ml-footer-col ml-footer-contact">
                         <div class="ml-footer-item">
-                            <svg class="ml-icon" viewBox="0 0 24 24" fill="#02872e">
+                            <svg class="ml-icon" viewBox="0 0 24 24" fill="var(--ml-icon, #02872e)">
                                 <path d="M16.75 13.96c.25.13.41.2.46.3.06.11.04.61-.21 1.18-.25.56-1.23 1.1-1.74 1.15-.46.04-1.02.07-2.06-.34-1.49-.59-2.73-1.63-3.69-2.77-.97-1.14-1.72-2.51-1.89-3.08-.18-.58-.02-.9.12-1.17.13-.25.29-.48.44-.65.15-.17.29-.26.39-.26.11 0 .22 0 .32.01.12.01.27-.04.42.33.15.37.52 1.28.57 1.38.05.1.08.22.02.34-.06.12-.13.23-.22.34-.1.1-.2.23-.29.33-.1.1-.21.21-.09.42.12.21.54.89 1.16 1.44.8.71 1.48.93 1.69 1.04.21.11.33.09.45-.05.13-.14.54-.63.69-.85.14-.21.3-.18.5-.1.21.08 1.32.62 1.55.73zM12 2a10 10 0 0 0-8.66 15L2 22l5.17-1.32A10 10 0 1 0 12 2z"/>
                             </svg>
                             <span><?= htmlspecialchars($cfg['phone_whatsapp'], ENT_QUOTES, 'UTF-8') ?></span>
                         </div>
                         <div class="ml-footer-item">
-                            <svg class="ml-icon" viewBox="0 0 24 24" fill="#02872e">
+                            <svg class="ml-icon" viewBox="0 0 24 24" fill="var(--ml-icon, #02872e)">
                                 <path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 0 0-1.01.24l-2.2 2.2a15.053 15.053 0 0 1-6.59-6.59l2.2-2.21a.96.96 0 0 0 .25-1.01A11.36 11.36 0 0 1 8.57 3.9c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.52c0-.55-.45-1-.99-1z"/>
                             </svg>
                             <span><?= htmlspecialchars($cfg['phone_landline'], ENT_QUOTES, 'UTF-8') ?></span>
@@ -551,13 +554,13 @@ function render_motherland_opd(array $patient, array $config = [], bool $isPrevi
                     </div>
                     <div class="ml-footer-col ml-footer-online">
                         <div class="ml-footer-item">
-                            <svg class="ml-icon" viewBox="0 0 24 24" fill="#02872e">
+                            <svg class="ml-icon" viewBox="0 0 24 24" fill="var(--ml-icon, #02872e)">
                                 <path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/>
                             </svg>
                             <span><?= htmlspecialchars($cfg['email'], ENT_QUOTES, 'UTF-8') ?></span>
                         </div>
                         <div class="ml-footer-item">
-                            <svg class="ml-icon" viewBox="0 0 24 24" fill="#02872e">
+                            <svg class="ml-icon" viewBox="0 0 24 24" fill="var(--ml-icon, #02872e)">
                                 <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
                             </svg>
                             <span><?= htmlspecialchars($cfg['website'], ENT_QUOTES, 'UTF-8') ?></span>
@@ -603,7 +606,7 @@ function get_motherland_opd_css(): string {
     left: 0;
     width: 7.5mm;
     height: 28mm;
-    background-color: #02872e;
+    background-color: var(--ml-accent, #02872e);
 }
 
 /* 2. Premium Watermark (Configurable Position & Size) */
@@ -683,7 +686,7 @@ function get_motherland_opd_css(): string {
 }
 
 .ml-hospital-name {
-    color: #00783e;
+    color: var(--ml-primary, #00783e);
     font-family: Georgia, "Times New Roman", Times, serif;
     font-weight: 700;
     font-size: 24pt;
@@ -713,13 +716,13 @@ function get_motherland_opd_css(): string {
     margin: 0;
     font-size: 13.5pt;
     font-weight: 700;
-    color: #111111;
+    color: var(--ml-heading, #111111);
     letter-spacing: 0.2px;
 }
 
 /* Divider Rules */
 .ml-divider-rule {
-    border-top: 1pt solid #222222;
+    border-top: 1pt solid var(--ml-border, #222222);
     margin: 1.5mm 0 2.5mm 0;
     width: 100%;
     z-index: 2;
@@ -730,7 +733,7 @@ function get_motherland_opd_css(): string {
 }
 
 .ml-footer-rule {
-    border-top: 0.8pt solid #666666;
+    border-top: 0.8pt solid var(--ml-border, #666666);
     margin: 2mm 0 3mm 0;
 }
 
@@ -762,7 +765,7 @@ function get_motherland_opd_css(): string {
 .ml-label {
     width: 25mm;
     font-weight: 500;
-    color: #222222;
+    color: var(--ml-label, #222222);
     flex-shrink: 0;
 }
 
@@ -775,12 +778,12 @@ function get_motherland_opd_css(): string {
     text-align: center;
     font-weight: 500;
     flex-shrink: 0;
-    color: #222222;
+    color: var(--ml-label, #222222);
 }
 
 .ml-value {
     flex: 1;
-    color: #111111;
+    color: var(--ml-text, #111111);
     font-weight: 500;
     word-break: break-word;
 }
@@ -792,7 +795,7 @@ function get_motherland_opd_css(): string {
 /* 6. Doctor Banner & Vitals Measurements Table */
 .ml-doctor-vitals-box {
     margin-top: 2.5mm;
-    border: 1.2pt solid #222222;
+    border: 1.2pt solid var(--ml-border, #222222);
     background: #ffffff;
     z-index: 2;
 }
@@ -800,14 +803,14 @@ function get_motherland_opd_css(): string {
 .ml-doc-header {
     text-align: center;
     padding: 1.2mm 3mm;
-    border-bottom: 1pt solid #222222;
+    border-bottom: 1pt solid var(--ml-border, #222222);
     background: #ffffff;
 }
 
 .ml-doctor-name {
     font-size: 11pt;
     font-weight: 800;
-    color: #000000;
+    color: var(--ml-primary, #000000);
     letter-spacing: 0.4px;
 }
 
@@ -822,7 +825,7 @@ function get_motherland_opd_css(): string {
 }
 
 .ml-vitals-row-2 {
-    border-top: 0.8pt solid #555555;
+    border-top: 0.8pt solid var(--ml-border, #555555);
 }
 
 .ml-v-cell {
@@ -838,11 +841,11 @@ function get_motherland_opd_css(): string {
 
 .v-lbl {
     font-weight: 600;
-    color: #111111;
+    color: var(--ml-label, #111111);
 }
 
 .v-unit {
-    color: #111111;
+    color: var(--ml-text, #111111);
     font-weight: 400;
 }
 
@@ -871,7 +874,7 @@ function get_motherland_opd_css(): string {
 
 .ml-validity-note {
     font-size: 8.5pt;
-    color: #111111;
+    color: var(--ml-text, #111111);
 }
 
 .ml-validity-note strong {
@@ -886,7 +889,7 @@ function get_motherland_opd_css(): string {
 
 /* Footer Rule - Clean Emerald Accent Line */
 .ml-footer-rule {
-    border-top: 1.2pt solid #02872e;
+    border-top: 1.2pt solid var(--ml-accent, var(--ml-primary, #02872e));
     margin: 1.5mm 0 2mm 0;
     flex-shrink: 0;
     page-break-inside: avoid;
@@ -900,7 +903,7 @@ function get_motherland_opd_css(): string {
     column-gap: 5mm;
     font-size: 7.6pt;
     line-height: 1.35;
-    color: #111111;
+    color: var(--ml-text, #111111);
     z-index: 2;
     flex-shrink: 0;
     page-break-inside: avoid;
@@ -934,6 +937,7 @@ function get_motherland_opd_css(): string {
     height: 3.5mm;
     flex-shrink: 0;
     margin-top: 0.2mm;
+    fill: var(--ml-icon, var(--ml-primary, #02872e));
 }
 
 .ml-footer-text {
@@ -942,7 +946,7 @@ function get_motherland_opd_css(): string {
 
 .ml-reg-office {
     margin-top: 0.8mm;
-    color: #222222;
+    color: var(--ml-text, #222222);
 }
 
 /* Bottom Meta Row (Validity Note + Doctor Signature) */
@@ -1003,7 +1007,7 @@ function get_motherland_opd_css(): string {
 
 .ml-page2-title {
     font-weight: 800;
-    color: #02872e;
+    color: var(--ml-primary, #02872e);
     letter-spacing: 0.4px;
 }
 

@@ -55,6 +55,8 @@ CREATE TABLE IF NOT EXISTS templates (
   margin_bottom DECIMAL(8,2) NULL DEFAULT 6.00,
   margin_left DECIMAL(8,2) NULL DEFAULT 12.00,
   page_config_json TEXT NULL,
+  theme_preset VARCHAR(50) NOT NULL DEFAULT 'green',
+  theme_config_json TEXT NULL,
   active TINYINT(1) NOT NULL DEFAULT 1,
   created_by INT UNSIGNED NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

@@ -5,6 +5,7 @@ require_once __DIR__ . '/includes/settings.php';
 require_once __DIR__ . '/includes/layout.php';
 require_once __DIR__ . '/includes/code_template.php';
 require_once __DIR__ . '/includes/page_engine.php';
+require_once __DIR__ . '/includes/theme_engine.php';
 
 // Handle POST actions
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
@@ -132,7 +133,34 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             }
         }
 
-        flash('success', 'Motherland template and page size settings saved successfully.');
+        // Save Universal Color Theme
+        if (isset($_POST['theme_preset'])) {
+            $themePreset = strtolower(trim((string)$_POST['theme_preset']));
+            $themePresets = get_theme_presets();
+            if (!isset($themePresets[$themePreset])) $themePreset = 'green';
+
+            $customTheme = [
+                'preset' => $themePreset,
+                'primary' => trim((string)($_POST['theme_primary'] ?? '')),
+                'secondary' => trim((string)($_POST['theme_secondary'] ?? '')),
+                'accent' => trim((string)($_POST['theme_accent'] ?? '')),
+                'border' => trim((string)($_POST['theme_border'] ?? '')),
+                'heading' => trim((string)($_POST['theme_heading'] ?? '')),
+                'text' => trim((string)($_POST['theme_text'] ?? '')),
+                'label' => trim((string)($_POST['theme_label'] ?? '')),
+                'icon' => trim((string)($_POST['theme_icon'] ?? '')),
+                'watermark' => trim((string)($_POST['theme_watermark'] ?? '')),
+                'watermarkOpacity' => !empty($_POST['theme_wm_opacity']) ? round((float)$_POST['theme_wm_opacity'] / 100, 2) : 0.08
+            ];
+            $themeConfigJson = json_encode($customTheme);
+            $targetTplId = (int)($_POST['template_id'] ?? 0);
+            if ($targetTplId > 0) {
+                $upTh = db()->prepare('UPDATE templates SET theme_preset = ?, theme_config_json = ? WHERE id = ?');
+                $upTh->execute([$themePreset, $themeConfigJson, $targetTplId]);
+            }
+        }
+
+        flash('success', 'Motherland template settings and color theme saved successfully.');
         header('Location: templates.php');
         exit;
     }
@@ -187,6 +215,9 @@ $cfg = get_motherland_config();
 $motherlandTpl = reset($codeTemplates) ?: null;
 $pageConfig = $motherlandTpl ? get_template_page_config($motherlandTpl) : null;
 $paperPresets = get_paper_presets();
+$themePresets = get_theme_presets();
+$tplTheme = $motherlandTpl ? get_template_theme($motherlandTpl) : $themePresets['green'];
+$activeThemeKey = strtolower(trim((string)($motherlandTpl['theme_preset'] ?? 'green')));
 $defaultPrintPages = $cfg['default_print_pages'] ?? '1';
 
 require_once __DIR__ . '/includes/header.php';
@@ -613,6 +644,106 @@ $defaultPrintPages = (string)($cfg['default_print_pages'] ?? '1');
             function toggleTplCustomDims(val) {
                 const row = document.getElementById('tplCustomDimsRow');
                 if (row) row.style.display = (val === 'Custom') ? 'grid' : 'none';
+            }
+            </script>
+
+            <!-- CARD 0.5: COLOR THEME PRESET & PALETTE -->
+            <div class="tpl-card">
+                <div class="tpl-card-head">
+                    <h3 class="tpl-card-title">
+                        <span class="tpl-badge-num">🎨</span>
+                        <span>Healthcare Color Theme (Template Property)</span>
+                    </h3>
+                    <span class="tpl-badge-pill" id="tplThemePill" style="background:#e8f8ef; color:#18a96a; display:inline-flex; align-items:center; gap:6px;">
+                        <span id="tplThemePillDot" style="width:9px; height:9px; border-radius:50%; background:<?= htmlspecialchars($tplTheme['primary']) ?>; display:inline-block;"></span>
+                        <span id="tplThemePillText"><?= e($tplTheme['name']) ?></span>
+                    </span>
+                </div>
+
+                <div style="margin-bottom:16px;">
+                    <label style="font-weight:700; color:#204036; margin-bottom:8px; display:block;">Select Predefined Healthcare Palette</label>
+                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:10px;">
+                        <?php foreach ($themePresets as $pk => $pv): ?>
+                            <label style="display:flex; align-items:center; gap:9px; padding:10px 12px; border:2px solid <?= ($activeThemeKey === $pk) ? '#18a96a' : '#dcece5' ?>; border-radius:6px; cursor:pointer; background:<?= ($activeThemeKey === $pk) ? '#eef9f4' : '#fff' ?>;" class="tpl-theme-radio-label">
+                                <input type="radio" name="theme_preset" value="<?= $pk ?>" <?= ($activeThemeKey === $pk) ? 'checked' : '' ?> onchange="updateTplThemePreview('<?= $pk ?>')">
+                                <span style="display:inline-flex; gap:3px; flex-shrink:0;">
+                                    <span style="width:11px; height:11px; border-radius:50%; background:<?= $pv['primary'] ?>;"></span>
+                                    <span style="width:11px; height:11px; border-radius:50%; background:<?= $pv['accent'] ?>;"></span>
+                                </span>
+                                <span style="font-size:12px; font-weight:600; color:#1f2937;"><?= $pv['name'] ?></span>
+                            </label>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+
+                <div id="tplCustomColorsSection" style="background:#f8fafc; padding:14px; border-radius:6px; border:1px solid #e2e8f0;">
+                    <label style="font-weight:700; color:#334155; margin-bottom:8px; display:block;">Fine-Tuned Theme Colors</label>
+                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap:12px;">
+                        <div>
+                            <label style="font-size:11px; color:#555; display:block; margin-bottom:4px;">Primary</label>
+                            <input type="color" name="theme_primary" id="tplColorPrimary" value="<?= htmlspecialchars($tplTheme['primary']) ?>" style="width:100%; height:32px; border:none; padding:0; cursor:pointer; border-radius:4px;">
+                        </div>
+                        <div>
+                            <label style="font-size:11px; color:#555; display:block; margin-bottom:4px;">Secondary</label>
+                            <input type="color" name="theme_secondary" id="tplColorSecondary" value="<?= htmlspecialchars($tplTheme['secondary']) ?>" style="width:100%; height:32px; border:none; padding:0; cursor:pointer; border-radius:4px;">
+                        </div>
+                        <div>
+                            <label style="font-size:11px; color:#555; display:block; margin-bottom:4px;">Accent</label>
+                            <input type="color" name="theme_accent" id="tplColorAccent" value="<?= htmlspecialchars($tplTheme['accent']) ?>" style="width:100%; height:32px; border:none; padding:0; cursor:pointer; border-radius:4px;">
+                        </div>
+                        <div>
+                            <label style="font-size:11px; color:#555; display:block; margin-bottom:4px;">Border</label>
+                            <input type="color" name="theme_border" id="tplColorBorder" value="<?= htmlspecialchars($tplTheme['border']) ?>" style="width:100%; height:32px; border:none; padding:0; cursor:pointer; border-radius:4px;">
+                        </div>
+                        <div>
+                            <label style="font-size:11px; color:#555; display:block; margin-bottom:4px;">Heading</label>
+                            <input type="color" name="theme_heading" id="tplColorHeading" value="<?= htmlspecialchars($tplTheme['heading']) ?>" style="width:100%; height:32px; border:none; padding:0; cursor:pointer; border-radius:4px;">
+                        </div>
+                        <div>
+                            <label style="font-size:11px; color:#555; display:block; margin-bottom:4px;">Text</label>
+                            <input type="color" name="theme_text" id="tplColorText" value="<?= htmlspecialchars($tplTheme['text']) ?>" style="width:100%; height:32px; border:none; padding:0; cursor:pointer; border-radius:4px;">
+                        </div>
+                        <div>
+                            <label style="font-size:11px; color:#555; display:block; margin-bottom:4px;">Label</label>
+                            <input type="color" name="theme_label" id="tplColorLabel" value="<?= htmlspecialchars($tplTheme['label']) ?>" style="width:100%; height:32px; border:none; padding:0; cursor:pointer; border-radius:4px;">
+                        </div>
+                        <div>
+                            <label style="font-size:11px; color:#555; display:block; margin-bottom:4px;">Icon</label>
+                            <input type="color" name="theme_icon" id="tplColorIcon" value="<?= htmlspecialchars($tplTheme['icon']) ?>" style="width:100%; height:32px; border:none; padding:0; cursor:pointer; border-radius:4px;">
+                        </div>
+                        <div>
+                            <label style="font-size:11px; color:#555; display:block; margin-bottom:4px;">Watermark</label>
+                            <input type="color" name="theme_watermark" id="tplColorWatermark" value="<?= htmlspecialchars($tplTheme['watermark']) ?>" style="width:100%; height:32px; border:none; padding:0; cursor:pointer; border-radius:4px;">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <script>
+            const tplThemePresets = <?= json_encode($themePresets) ?>;
+            function updateTplThemePreview(key) {
+                const preset = tplThemePresets[key];
+                if (!preset) return;
+                const dot = document.getElementById('tplThemePillDot');
+                const text = document.getElementById('tplThemePillText');
+                if (dot) dot.style.background = preset.primary;
+                if (text) text.textContent = preset.name;
+
+                const map = {
+                    'Primary': preset.primary,
+                    'Secondary': preset.secondary,
+                    'Accent': preset.accent,
+                    'Border': preset.border,
+                    'Heading': preset.heading,
+                    'Text': preset.text,
+                    'Label': preset.label,
+                    'Icon': preset.icon,
+                    'Watermark': preset.watermark
+                };
+                for (const [k, v] of Object.entries(map)) {
+                    const el = document.getElementById('tplColor' + k);
+                    if (el && v) el.value = v;
+                }
             }
             </script>
 

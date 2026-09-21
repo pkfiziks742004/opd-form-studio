@@ -87,7 +87,15 @@ $pageConfigJson = json_encode([
 
 ensure_template_page_columns();
 
-$upSt = db()->prepare('UPDATE templates SET 
+$themePreset = isset($input['theme_preset']) ? strtolower(trim((string)$input['theme_preset'])) : null;
+$themeConfigJson = null;
+if (isset($input['theme_config'])) {
+    $themeConfigJson = is_array($input['theme_config']) ? json_encode($input['theme_config']) : trim((string)$input['theme_config']);
+} elseif (isset($input['theme_config_json'])) {
+    $themeConfigJson = is_string($input['theme_config_json']) ? $input['theme_config_json'] : json_encode($input['theme_config_json']);
+}
+
+$updateFields = '
     page_size = ?,
     orientation = ?,
     page_width = ?,
@@ -97,10 +105,8 @@ $upSt = db()->prepare('UPDATE templates SET
     margin_right = ?,
     margin_bottom = ?,
     margin_left = ?,
-    page_config_json = ?
-    WHERE id = ?');
-
-$upSt->execute([
+    page_config_json = ?';
+$params = [
     $pageSize,
     $orientation,
     $pageWidth,
@@ -110,9 +116,21 @@ $upSt->execute([
     $marginRight,
     $marginBottom,
     $marginLeft,
-    $pageConfigJson,
-    $templateId
-]);
+    $pageConfigJson
+];
+
+if ($themePreset !== null) {
+    $updateFields .= ', theme_preset = ?';
+    $params[] = $themePreset;
+}
+if ($themeConfigJson !== null) {
+    $updateFields .= ', theme_config_json = ?';
+    $params[] = $themeConfigJson;
+}
+
+$params[] = $templateId;
+$upSt = db()->prepare("UPDATE templates SET {$updateFields} WHERE id = ?");
+$upSt->execute($params);
 
 // Return updated geometry for live UI confirmation
 $updatedTpl = array_merge($tpl, [

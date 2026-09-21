@@ -177,6 +177,224 @@
         }
     });
 
+    // --- COLOR THEME STATE & LOGIC ---
+    const themePresets = (window.EDITOR_DATA && window.EDITOR_DATA.themePresets) ? window.EDITOR_DATA.themePresets : {};
+    let themeState = {
+        preset: (window.EDITOR_DATA && window.EDITOR_DATA.themePreset) || 'green',
+        config: (window.EDITOR_DATA && window.EDITOR_DATA.templateTheme) ? Object.assign({}, window.EDITOR_DATA.templateTheme) : {
+            primary: '#087F6C',
+            secondary: '#075E54',
+            accent: '#10B981',
+            border: '#222222',
+            text: '#111827',
+            heading: '#075E54',
+            label: '#374151',
+            icon: '#087F6C',
+            watermark: '#087F6C',
+            watermarkOpacity: 0.08
+        }
+    };
+
+    function getLuminance(hex) {
+        hex = (hex || '#000000').replace('#', '');
+        if (hex.length === 3) hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+        if (hex.length !== 6) return 0.5;
+        const r = parseInt(hex.substring(0, 2), 16) / 255;
+        const g = parseInt(hex.substring(2, 4), 16) / 255;
+        const b = parseInt(hex.substring(4, 6), 16) / 255;
+        const fn = c => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+        return 0.2126 * fn(r) + 0.7152 * fn(g) + 0.0722 * fn(b);
+    }
+
+    function getContrast(hex1, hex2) {
+        const l1 = getLuminance(hex1);
+        const l2 = getLuminance(hex2);
+        return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+    }
+
+    function syncInputsFromThemeState() {
+        const c = themeState.config;
+        const map = {
+            'Primary': c.primary,
+            'Secondary': c.secondary,
+            'Accent': c.accent,
+            'Border': c.border,
+            'Heading': c.heading,
+            'Text': c.text,
+            'Label': c.label,
+            'Icon': c.icon,
+            'Watermark': c.watermark
+        };
+        for (const [key, val] of Object.entries(map)) {
+            const colorIn = document.getElementById('themeColor' + key);
+            const hexIn = document.getElementById('themeHex' + key);
+            if (colorIn && val) colorIn.value = val;
+            if (hexIn && val) hexIn.value = val;
+        }
+        const wmSlider = document.getElementById('themeWmOpacity');
+        const wmVal = document.getElementById('wmOpacityVal');
+        if (wmSlider && c.watermarkOpacity !== undefined) {
+            const pct = Math.round(c.watermarkOpacity * 100);
+            wmSlider.value = pct;
+            if (wmVal) wmVal.textContent = pct + '%';
+        }
+    }
+
+    function applyThemeLive() {
+        const c = themeState.config;
+        paper.style.setProperty('--ml-primary', c.primary);
+        paper.style.setProperty('--ml-secondary', c.secondary);
+        paper.style.setProperty('--ml-accent', c.accent);
+        paper.style.setProperty('--ml-border', c.border);
+        paper.style.setProperty('--ml-heading', c.heading);
+        paper.style.setProperty('--ml-text', c.text);
+        paper.style.setProperty('--ml-label', c.label);
+        paper.style.setProperty('--ml-icon', c.icon);
+        paper.style.setProperty('--ml-wm-color', c.watermark);
+        paper.style.setProperty('--ml-wm-opacity', c.watermarkOpacity);
+
+        // Update badge
+        const badgeDot = document.getElementById('badgeThemeDot');
+        const badgeName = document.getElementById('badgeThemeName');
+        if (badgeDot) badgeDot.style.background = c.primary;
+        if (badgeName) {
+            const pName = themePresets[themeState.preset] ? themePresets[themeState.preset].name : 'Custom Theme';
+            badgeName.textContent = pName;
+        }
+
+        // Update active preset button highlight
+        document.querySelectorAll('.btn-theme-preset').forEach(btn => {
+            const isMatch = btn.dataset.themeKey === themeState.preset;
+            btn.style.borderColor = isMatch ? '#087F6C' : '#cbd5e1';
+            btn.style.background = isMatch ? '#f0fdf4' : '#fff';
+            btn.style.fontWeight = isMatch ? '700' : '500';
+        });
+
+        // Sync form inputs
+        syncInputsFromThemeState();
+
+        // Calculate WCAG contrast against white background
+        const textContrast = getContrast(c.text || '#111827', '#FFFFFF');
+        const contrastValEl = document.getElementById('contrastValue');
+        const contrastBadgeEl = document.getElementById('contrastBadge');
+        if (contrastValEl && contrastBadgeEl) {
+            contrastValEl.textContent = textContrast.toFixed(1) + ':1';
+            if (textContrast >= 7.0) {
+                contrastBadgeEl.textContent = '✓ AAA High Print Legibility';
+                contrastBadgeEl.style.color = '#16a34a';
+            } else if (textContrast >= 4.5) {
+                contrastBadgeEl.textContent = '✓ AA Normal Legibility';
+                contrastBadgeEl.style.color = '#0284c7';
+            } else {
+                contrastBadgeEl.textContent = '⚠ Low Contrast Warning';
+                contrastBadgeEl.style.color = '#dc2626';
+            }
+        }
+    }
+
+    // Bind theme preset buttons
+    document.querySelectorAll('.btn-theme-preset').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const key = btn.dataset.themeKey;
+            themeState.preset = key;
+            if (themePresets[key]) {
+                themeState.config = Object.assign({}, themePresets[key]);
+            }
+            applyThemeLive();
+        });
+    });
+
+    // Bind custom color inputs
+    ['Primary', 'Secondary', 'Accent', 'Border', 'Heading', 'Text', 'Label', 'Icon', 'Watermark'].forEach(key => {
+        const colorIn = document.getElementById('themeColor' + key);
+        const hexIn = document.getElementById('themeHex' + key);
+        const propName = key.toLowerCase();
+
+        if (colorIn) {
+            colorIn.addEventListener('input', () => {
+                const val = colorIn.value;
+                if (hexIn) hexIn.value = val;
+                themeState.config[propName] = val;
+                themeState.preset = 'custom';
+                applyThemeLive();
+            });
+        }
+        if (hexIn) {
+            hexIn.addEventListener('input', () => {
+                let val = hexIn.value.trim();
+                if (!val.startsWith('#')) val = '#' + val;
+                if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
+                    if (colorIn) colorIn.value = val;
+                    themeState.config[propName] = val;
+                    themeState.preset = 'custom';
+                    applyThemeLive();
+                }
+            });
+        }
+    });
+
+    const wmSlider = document.getElementById('themeWmOpacity');
+    const wmVal = document.getElementById('wmOpacityVal');
+    if (wmSlider) {
+        wmSlider.addEventListener('input', () => {
+            const pct = parseInt(wmSlider.value) || 8;
+            if (wmVal) wmVal.textContent = pct + '%';
+            themeState.config.watermarkOpacity = pct / 100;
+            themeState.preset = 'custom';
+            applyThemeLive();
+        });
+    }
+
+    // Toggle custom colors accordion
+    const toggleCustomBtn = document.getElementById('toggleCustomColorsBtn');
+    const customContent = document.getElementById('customColorsContent');
+    const customArrow = document.getElementById('customColorsArrow');
+    if (toggleCustomBtn && customContent) {
+        toggleCustomBtn.addEventListener('click', () => {
+            const isHidden = customContent.style.display === 'none';
+            customContent.style.display = isHidden ? 'grid' : 'none';
+            if (customArrow) customArrow.textContent = isHidden ? '▲' : '▼';
+        });
+    }
+
+    // Save Theme handler
+    const btnSaveTheme = document.getElementById('btnSaveThemeSettings');
+    async function saveThemeSettings(showNotice = true) {
+        if (!window.EDITOR_DATA || !window.EDITOR_DATA.templateId) return;
+        if (btnSaveTheme && showNotice) {
+            btnSaveTheme.disabled = true;
+            btnSaveTheme.textContent = 'Saving...';
+        }
+        try {
+            const res = await fetch('api/save_theme_settings.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': window.EDITOR_DATA.csrf
+                },
+                body: JSON.stringify({
+                    template_id: window.EDITOR_DATA.templateId,
+                    theme_preset: themeState.preset,
+                    theme_config: themeState.config
+                })
+            });
+            const data = await res.json();
+            if (!data.ok) throw new Error(data.message || 'Failed to save theme');
+            if (btnSaveTheme && showNotice) {
+                btnSaveTheme.textContent = 'Saved ✓';
+                setTimeout(() => { btnSaveTheme.textContent = 'Save Theme'; }, 1500);
+            }
+        } catch (err) {
+            if (showNotice) alert('Error saving theme: ' + err.message);
+            if (btnSaveTheme && showNotice) btnSaveTheme.textContent = 'Save Theme';
+        } finally {
+            if (btnSaveTheme && showNotice) btnSaveTheme.disabled = false;
+        }
+    }
+    if (btnSaveTheme) {
+        btnSaveTheme.addEventListener('click', () => saveThemeSettings(true));
+    }
+
     async function savePageSettings(showNotice = true) {
         if (!window.EDITOR_DATA || !window.EDITOR_DATA.templateId) return;
         const payload = {
@@ -189,7 +407,9 @@
             margin_top: pageState.marginTop,
             margin_right: pageState.marginRight,
             margin_bottom: pageState.marginBottom,
-            margin_left: pageState.marginLeft
+            margin_left: pageState.marginLeft,
+            theme_preset: themeState.preset,
+            theme_config: themeState.config
         };
 
         if (btnSavePageSettings && showNotice) {
@@ -229,8 +449,9 @@
         btnSavePageSettings.addEventListener('click', () => savePageSettings(true));
     }
 
-    // Initialize initial canvas geometry
+    // Initialize initial canvas geometry & theme
     updatePageGeometry();
+    applyThemeLive();
 
     // --- DRAG & DROP FIELD/BLOCK LOGIC ---
     function pick(el) {
@@ -341,8 +562,9 @@
                 const data = await res.json();
                 if (!data.ok) throw new Error(data.message || 'Save layout failed');
 
-                // Also save current page settings
+                // Also save current page and theme settings
                 await savePageSettings(false);
+                await saveThemeSettings(false);
 
                 save.textContent = 'Saved ✓';
                 setTimeout(() => { save.textContent = 'Save my layout'; }, 1400);

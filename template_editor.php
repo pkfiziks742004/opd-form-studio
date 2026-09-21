@@ -34,6 +34,9 @@ $perm = field_permissions((int)$user['id']);
 $cfg = get_motherland_config();
 $pageConfig = $tpl ? get_template_page_config($tpl) : null;
 $paperPresets = get_paper_presets();
+$themePresets = get_theme_presets();
+$templateTheme = $tpl ? get_template_theme($tpl) : $themePresets['green'];
+$activeThemeKey = strtolower(trim((string)($tpl['theme_preset'] ?? 'green')));
 
 // Default positions for code template blocks
 $defaultCodeLayout = [
@@ -182,6 +185,120 @@ require_once __DIR__ . '/includes/header.php';
                 </button>
             </section>
 
+            <!-- 1.5 Dedicated Color Theme Panel -->
+            <section class="card field-palette theme-settings-panel">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+                    <h3 style="margin:0;font-size:15px;color:#0f2e2a;">🎨 Color Theme</h3>
+                    <span id="badgeThemePreset" style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:12px;background:#e6f4ea;color:#0d652d;border:1px solid #ceead6;display:inline-flex;align-items:center;gap:5px;">
+                        <span id="badgeThemeDot" style="width:8px;height:8px;border-radius:50%;background:<?= htmlspecialchars($templateTheme['primary']) ?>;display:inline-block;"></span>
+                        <span id="badgeThemeName"><?= e($templateTheme['name']) ?></span>
+                    </span>
+                </div>
+
+                <!-- Theme Preset Palette Chips -->
+                <div style="margin-bottom:12px;">
+                    <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px;">Palette Presets</label>
+                    <div style="display:grid;grid-template-columns:repeat(2, 1fr);gap:6px;" id="themePresetGrid">
+                        <?php foreach ($themePresets as $pk => $pv): ?>
+                            <button type="button" class="btn btn-sm btn-theme-preset <?= ($activeThemeKey === $pk) ? 'is-active-theme' : '' ?>" data-theme-key="<?= $pk ?>" style="display:flex;align-items:center;justify-content:flex-start;gap:7px;padding:6px 8px;font-size:11.5px;text-align:left;border:1px solid <?= ($activeThemeKey === $pk) ? '#087F6C' : '#cbd5e1' ?>;background:<?= ($activeThemeKey === $pk) ? '#f0fdf4' : '#fff' ?>;border-radius:5px;cursor:pointer;">
+                                <span style="display:inline-flex;gap:2px;flex-shrink:0;">
+                                    <span style="width:9px;height:9px;border-radius:50%;background:<?= $pv['primary'] ?>;"></span>
+                                    <span style="width:9px;height:9px;border-radius:50%;background:<?= $pv['accent'] ?>;"></span>
+                                </span>
+                                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><?= $pv['name'] ?></span>
+                            </button>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+
+                <!-- Custom Theme Color Pickers Collapsible Accordion -->
+                <div id="customColorsWrap" style="background:#f8fafc;padding:10px;border-radius:5px;border:1px solid #e2e8f0;margin-bottom:12px;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;cursor:pointer;" id="toggleCustomColorsBtn">
+                        <span style="font-size:12px;font-weight:700;color:#334155;">Granular Color Customizer</span>
+                        <span id="customColorsArrow" style="font-size:11px;color:#64748b;">▼</span>
+                    </div>
+                    <div id="customColorsContent" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                        <div>
+                            <label style="font-size:10.5px;color:#64748b;display:block;">Primary Color</label>
+                            <div style="display:flex;align-items:center;gap:5px;">
+                                <input type="color" id="themeColorPrimary" value="<?= htmlspecialchars($templateTheme['primary']) ?>" style="width:26px;height:26px;padding:0;border:none;border-radius:4px;cursor:pointer;">
+                                <input type="text" id="themeHexPrimary" value="<?= htmlspecialchars($templateTheme['primary']) ?>" maxlength="7" style="width:65px;padding:3px 5px;font-size:11px;border:1px solid #cbd5e1;border-radius:3px;">
+                            </div>
+                        </div>
+                        <div>
+                            <label style="font-size:10.5px;color:#64748b;display:block;">Secondary Color</label>
+                            <div style="display:flex;align-items:center;gap:5px;">
+                                <input type="color" id="themeColorSecondary" value="<?= htmlspecialchars($templateTheme['secondary']) ?>" style="width:26px;height:26px;padding:0;border:none;border-radius:4px;cursor:pointer;">
+                                <input type="text" id="themeHexSecondary" value="<?= htmlspecialchars($templateTheme['secondary']) ?>" maxlength="7" style="width:65px;padding:3px 5px;font-size:11px;border:1px solid #cbd5e1;border-radius:3px;">
+                            </div>
+                        </div>
+                        <div>
+                            <label style="font-size:10.5px;color:#64748b;display:block;">Accent Color</label>
+                            <div style="display:flex;align-items:center;gap:5px;">
+                                <input type="color" id="themeColorAccent" value="<?= htmlspecialchars($templateTheme['accent']) ?>" style="width:26px;height:26px;padding:0;border:none;border-radius:4px;cursor:pointer;">
+                                <input type="text" id="themeHexAccent" value="<?= htmlspecialchars($templateTheme['accent']) ?>" maxlength="7" style="width:65px;padding:3px 5px;font-size:11px;border:1px solid #cbd5e1;border-radius:3px;">
+                            </div>
+                        </div>
+                        <div>
+                            <label style="font-size:10.5px;color:#64748b;display:block;">Border Color</label>
+                            <div style="display:flex;align-items:center;gap:5px;">
+                                <input type="color" id="themeColorBorder" value="<?= htmlspecialchars($templateTheme['border']) ?>" style="width:26px;height:26px;padding:0;border:none;border-radius:4px;cursor:pointer;">
+                                <input type="text" id="themeHexBorder" value="<?= htmlspecialchars($templateTheme['border']) ?>" maxlength="7" style="width:65px;padding:3px 5px;font-size:11px;border:1px solid #cbd5e1;border-radius:3px;">
+                            </div>
+                        </div>
+                        <div>
+                            <label style="font-size:10.5px;color:#64748b;display:block;">Heading Color</label>
+                            <div style="display:flex;align-items:center;gap:5px;">
+                                <input type="color" id="themeColorHeading" value="<?= htmlspecialchars($templateTheme['heading']) ?>" style="width:26px;height:26px;padding:0;border:none;border-radius:4px;cursor:pointer;">
+                                <input type="text" id="themeHexHeading" value="<?= htmlspecialchars($templateTheme['heading']) ?>" maxlength="7" style="width:65px;padding:3px 5px;font-size:11px;border:1px solid #cbd5e1;border-radius:3px;">
+                            </div>
+                        </div>
+                        <div>
+                            <label style="font-size:10.5px;color:#64748b;display:block;">Text Color</label>
+                            <div style="display:flex;align-items:center;gap:5px;">
+                                <input type="color" id="themeColorText" value="<?= htmlspecialchars($templateTheme['text']) ?>" style="width:26px;height:26px;padding:0;border:none;border-radius:4px;cursor:pointer;">
+                                <input type="text" id="themeHexText" value="<?= htmlspecialchars($templateTheme['text']) ?>" maxlength="7" style="width:65px;padding:3px 5px;font-size:11px;border:1px solid #cbd5e1;border-radius:3px;">
+                            </div>
+                        </div>
+                        <div>
+                            <label style="font-size:10.5px;color:#64748b;display:block;">Label Color</label>
+                            <div style="display:flex;align-items:center;gap:5px;">
+                                <input type="color" id="themeColorLabel" value="<?= htmlspecialchars($templateTheme['label']) ?>" style="width:26px;height:26px;padding:0;border:none;border-radius:4px;cursor:pointer;">
+                                <input type="text" id="themeHexLabel" value="<?= htmlspecialchars($templateTheme['label']) ?>" maxlength="7" style="width:65px;padding:3px 5px;font-size:11px;border:1px solid #cbd5e1;border-radius:3px;">
+                            </div>
+                        </div>
+                        <div>
+                            <label style="font-size:10.5px;color:#64748b;display:block;">Icon Color</label>
+                            <div style="display:flex;align-items:center;gap:5px;">
+                                <input type="color" id="themeColorIcon" value="<?= htmlspecialchars($templateTheme['icon']) ?>" style="width:26px;height:26px;padding:0;border:none;border-radius:4px;cursor:pointer;">
+                                <input type="text" id="themeHexIcon" value="<?= htmlspecialchars($templateTheme['icon']) ?>" maxlength="7" style="width:65px;padding:3px 5px;font-size:11px;border:1px solid #cbd5e1;border-radius:3px;">
+                            </div>
+                        </div>
+                        <div>
+                            <label style="font-size:10.5px;color:#64748b;display:block;">Watermark Color</label>
+                            <div style="display:flex;align-items:center;gap:5px;">
+                                <input type="color" id="themeColorWatermark" value="<?= htmlspecialchars($templateTheme['watermark']) ?>" style="width:26px;height:26px;padding:0;border:none;border-radius:4px;cursor:pointer;">
+                                <input type="text" id="themeHexWatermark" value="<?= htmlspecialchars($templateTheme['watermark']) ?>" maxlength="7" style="width:65px;padding:3px 5px;font-size:11px;border:1px solid #cbd5e1;border-radius:3px;">
+                            </div>
+                        </div>
+                        <div>
+                            <label style="font-size:10.5px;color:#64748b;display:block;">WM Opacity (<span id="wmOpacityVal"><?= round(($templateTheme['watermarkOpacity'] ?? 0.08) * 100) ?>%</span>)</label>
+                            <input type="range" id="themeWmOpacity" min="1" max="30" value="<?= round(($templateTheme['watermarkOpacity'] ?? 0.08) * 100) ?>" style="width:100%;margin-top:6px;">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- WCAG Contrast Live Notice -->
+                <div id="contrastNotice" style="font-size:11px;padding:6px 9px;border-radius:4px;background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;margin-bottom:10px;line-height:1.4;">
+                    <span>Contrast Ratio: </span><strong id="contrastValue">7.5:1</strong>
+                    <span id="contrastBadge" style="margin-left:5px;font-weight:700;color:#16a34a;">✓ AAA High Print Legibility</span>
+                </div>
+
+                <button type="button" class="btn btn-soft btn-sm" id="btnSaveThemeSettings" style="width:100%;font-weight:600;">
+                    Save Theme
+                </button>
+            </section>
+
             <!-- 2. Sections / Fields Layout Palette -->
             <section class="card field-palette">
                 <?php if ($isCode): ?>
@@ -239,9 +356,9 @@ require_once __DIR__ . '/includes/header.php';
                     }
                 </style>
 
-                <div class="layout-paper code-paper" id="layoutPaper">
+                <div class="layout-paper code-paper" id="layoutPaper" style="<?= generate_theme_style_attr($templateTheme) ?>">
                     <!-- Top Left Accent Bar -->
-                    <div class="ml-top-accent" style="background-color: <?= htmlspecialchars($cfg['accent_color'], ENT_QUOTES, 'UTF-8') ?>"></div>
+                    <div class="ml-top-accent"></div>
 
                     <!-- 1. Logo Block -->
                     <?php 
@@ -327,20 +444,20 @@ require_once __DIR__ . '/includes/header.php';
                         <div class="ml-footer" style="font-size:9.5px;line-height:1.35;">
                             <div class="ml-footer-col ml-footer-address">
                                 <div class="ml-footer-item">
-                                    <svg class="ml-icon" viewBox="0 0 24 24" fill="#02872e" style="width:14px;height:14px;"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 0 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>
+                                    <svg class="ml-icon" viewBox="0 0 24 24" fill="var(--ml-icon, #02872e)" style="width:14px;height:14px;"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 0 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>
                                     <div class="ml-footer-text">
                                         <div><strong>Hospital.:</strong> <?= e($cfg['hospital_address']) ?></div>
                                         <div class="ml-reg-office"><?= nl2br(e($cfg['reg_office'])) ?></div>
                                     </div>
                                 </div>
                             </div>
-                            <div class="ml-footer-col ml-footer-contact" style="border-left:1px solid #888;padding-left:12px;">
-                                <div class="ml-footer-item"><svg class="ml-icon" viewBox="0 0 24 24" fill="#02872e" style="width:14px;height:14px;"><path d="M16.75 13.96c.25.13.41.2.46.3.06.11.04.61-.21 1.18-.25.56-1.23 1.1-1.74 1.15-.46.04-1.02.07-2.06-.34-1.49-.59-2.73-1.63-3.69-2.77-.97-1.14-1.72-2.51-1.89-3.08-.18-.58-.02-.9.12-1.17.13-.25.29-.48.44-.65.15-.17.29-.26.39-.26.11 0 .22 0 .32.01.12.01.27-.04.42.33.15.37.52 1.28.57 1.38.05.1.08.22.02.34-.06.12-.13.23-.22.34-.1.1-.2.23-.29.33-.1.1-.21.21-.09.42.12.21.54.89 1.16 1.44.8.71 1.48.93 1.69 1.04.21.11.33.09.45-.05.13-.14.54-.63.69-.85.14-.21.3-.18.5-.1.21.08 1.32.62 1.55.73zM12 2a10 10 0 0 0-8.66 15L2 22l5.17-1.32A10 10 0 1 0 12 2z"/></svg><span><?= e($cfg['phone_whatsapp']) ?></span></div>
-                                <div class="ml-footer-item"><svg class="ml-icon" viewBox="0 0 24 24" fill="#02872e" style="width:14px;height:14px;"><path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 0 0-1.01.24l-2.2 2.2a15.053 15.053 0 0 1-6.59-6.59l2.2-2.21a.96.96 0 0 0 .25-1.01A11.36 11.36 0 0 1 8.57 3.9c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.52c0-.55-.45-1-.99-1z"/></svg><span><?= e($cfg['phone_landline']) ?></span></div>
+                            <div class="ml-footer-col ml-footer-contact" style="border-left:none;padding-left:0;">
+                                <div class="ml-footer-item"><svg class="ml-icon" viewBox="0 0 24 24" fill="var(--ml-icon, #02872e)" style="width:14px;height:14px;"><path d="M16.75 13.96c.25.13.41.2.46.3.06.11.04.61-.21 1.18-.25.56-1.23 1.1-1.74 1.15-.46.04-1.02.07-2.06-.34-1.49-.59-2.73-1.63-3.69-2.77-.97-1.14-1.72-2.51-1.89-3.08-.18-.58-.02-.9.12-1.17.13-.25.29-.48.44-.65.15-.17.29-.26.39-.26.11 0 .22 0 .32.01.12.01.27-.04.42.33.15.37.52 1.28.57 1.38.05.1.08.22.02.34-.06.12-.13.23-.22.34-.1.1-.2.23-.29.33-.1.1-.21.21-.09.42.12.21.54.89 1.16 1.44.8.71 1.48.93 1.69 1.04.21.11.33.09.45-.05.13-.14.54-.63.69-.85.14-.21.3-.18.5-.1.21.08 1.32.62 1.55.73zM12 2a10 10 0 0 0-8.66 15L2 22l5.17-1.32A10 10 0 1 0 12 2z"/></svg><span><?= e($cfg['phone_whatsapp']) ?></span></div>
+                                <div class="ml-footer-item"><svg class="ml-icon" viewBox="0 0 24 24" fill="var(--ml-icon, #02872e)" style="width:14px;height:14px;"><path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 0 0-1.01.24l-2.2 2.2a15.053 15.053 0 0 1-6.59-6.59l2.2-2.21a.96.96 0 0 0 .25-1.01A11.36 11.36 0 0 1 8.57 3.9c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.52c0-.55-.45-1-.99-1z"/></svg><span><?= e($cfg['phone_landline']) ?></span></div>
                             </div>
-                            <div class="ml-footer-col ml-footer-online" style="border-left:1px solid #888;padding-left:12px;">
-                                <div class="ml-footer-item"><svg class="ml-icon" viewBox="0 0 24 24" fill="#02872e" style="width:14px;height:14px;"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg><span><?= e($cfg['email']) ?></span></div>
-                                <div class="ml-footer-item"><svg class="ml-icon" viewBox="0 0 24 24" fill="#02872e" style="width:14px;height:14px;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg><span><?= e($cfg['website']) ?></span></div>
+                            <div class="ml-footer-col ml-footer-online" style="border-left:none;padding-left:0;">
+                                <div class="ml-footer-item"><svg class="ml-icon" viewBox="0 0 24 24" fill="var(--ml-icon, #02872e)" style="width:14px;height:14px;"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg><span><?= e($cfg['email']) ?></span></div>
+                                <div class="ml-footer-item"><svg class="ml-icon" viewBox="0 0 24 24" fill="var(--ml-icon, #02872e)" style="width:14px;height:14px;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg><span><?= e($cfg['website']) ?></span></div>
                             </div>
                         </div>
                     </div>
@@ -352,7 +469,10 @@ require_once __DIR__ . '/includes/header.php';
                         csrf: '<?= csrf_token() ?>',
                         defaultLayout: <?= json_encode($defaultCodeLayout) ?>,
                         pageConfig: <?= json_encode($pageConfig) ?>,
-                        paperPresets: <?= json_encode($paperPresets) ?>
+                        paperPresets: <?= json_encode($paperPresets) ?>,
+                        themePresets: <?= json_encode($themePresets) ?>,
+                        templateTheme: <?= json_encode($templateTheme) ?>,
+                        themePreset: '<?= $activeThemeKey ?>'
                     };
                 </script>
                 <script src="assets/js/template-editor.js"></script>

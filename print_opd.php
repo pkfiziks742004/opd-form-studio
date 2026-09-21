@@ -46,6 +46,7 @@ $isCode = is_code_template($tpl);
 $layout = get_layout($tpl, (int)$user['id']);
 $perm = field_permissions((int)$user['id']);
 $pageConfig = get_template_page_config($tpl);
+$theme = get_template_theme($tpl);
 
 $cfg = get_motherland_config();
 if ($pages <= 0) {
@@ -260,6 +261,10 @@ $allTemplates = db()->query('SELECT id, name, template_type, file_path FROM temp
         <?php endif; ?>
         <span style="font-size:11.5px;background:rgba(255,255,255,0.12);padding:4px 9px;border-radius:4px;color:#cbd5e1;border:1px solid rgba(255,255,255,0.18);white-space:nowrap;" title="Template Paper Size">
             📄 <?= e($pageConfig['label']) ?> (<?= $pageConfig['width'] ?>×<?= $pageConfig['height'] ?> <?= $pageConfig['unit'] ?>)
+        </span>
+        <span style="font-size:11.5px;background:rgba(255,255,255,0.12);padding:4px 9px;border-radius:4px;color:#cbd5e1;border:1px solid rgba(255,255,255,0.18);white-space:nowrap;display:inline-flex;align-items:center;gap:6px;" title="Template Theme">
+            <span style="width:9px;height:9px;border-radius:50%;background:<?= htmlspecialchars($theme['primary']) ?>;display:inline-block;box-shadow:0 0 0 1px rgba(255,255,255,0.5);"></span>
+            🎨 <?= e($theme['name'] ?? 'Theme') ?>
         </span>
     </div>
     <div class="toolbar-actions">
