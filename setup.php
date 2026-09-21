@@ -1,0 +1,10 @@
+<?php
+require_once __DIR__.'/includes/config.php';
+$key=$_GET['key']??''; if(!$key||!hash_equals((string)envv('SETUP_KEY',''),(string)$key)){http_response_code(403);exit('Invalid setup key. Set SETUP_KEY in .env and open setup.php?key=YOUR_KEY');}
+$message='';$error='';
+if($_SERVER['REQUEST_METHOD']==='POST'){
+ try{verify_csrf();$sql=file_get_contents(__DIR__.'/database/schema.sql'); foreach(preg_split('/;\s*(?:\r?\n|$)/',$sql) as $statement){$statement=trim($statement);if($statement!=='')db()->exec($statement);}
+ $count=(int)db()->query('SELECT COUNT(*) FROM users')->fetchColumn();if($count===0){$name=trim($_POST['name']??'Administrator');$username=trim($_POST['username']??'admin');$password=$_POST['password']??'';if(strlen($password)<8)throw new RuntimeException('Use an admin password of at least 8 characters.');$st=db()->prepare("INSERT INTO users(name,username,password_hash,role,active) VALUES(?,?,?,'admin',1)");$st->execute([$name,$username,password_hash($password,PASSWORD_DEFAULT)]);} $message='Setup complete. Delete or rename setup.php now, then sign in.';
+ }catch(Throwable $e){$error=$e->getMessage();}
+}
+?><!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Setup OPD Studio</title><link rel="stylesheet" href="assets/css/app.css"></head><body class="login-body"><div class="login-card wide"><h1>Install OPD Form Studio</h1><p>Database: <?=e(envv('DB_NAME',''))?> on <?=e(envv('DB_HOST',''))?></p><?php if($message):?><div class="alert alert-success"><?=e($message)?></div><a class="btn btn-primary btn-block" href="login.php">Open login</a><?php else:?><?php if($error):?><div class="alert alert-error"><?=e($error)?></div><?php endif;?><form method="post"><input type="hidden" name="csrf" value="<?=csrf_token()?>"><label>Admin full name<input name="name" value="Administrator" required></label><label>Admin username<input name="username" value="admin" required></label><label>Admin password<input type="password" name="password" minlength="8" required></label><button class="btn btn-primary btn-block">Install database</button></form><?php endif;?></div></body></html>

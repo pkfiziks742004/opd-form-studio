@@ -1,0 +1,43 @@
+# ==============================================================================
+# Git Ignore - OPD Form Studio
+# ==============================================================================
+
+# Critical Security: NEVER commit .env file with real credentials
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Temporary and Scratch Directories
+scratch/
+.tempmediaStorage/
+temp/
+tmp/
+
+# Logs & Error Logs
+*.log
+error_log
+php_errors.log
+
+# Uploaded Files (preserve directory structure via .gitkeep)
+uploads/templates/*
+!uploads/templates/.gitkeep
+
+# System & OS Files
+.DS_Store
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# Editor & IDE Directories
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*~
+
+# Database Dumps (keep database/schema.sql, ignore raw backups)
+*.sql.gz
+*.sql.bak
+*.bak
