@@ -71,6 +71,8 @@ function get_motherland_defaults(): array {
         'show_doctor_box' => '1',
         'show_vitals' => '1',
         'show_validity_note' => '1',
+        'show_signature_box' => '1',
+        'lbl_signature' => "Doctor's Signature / Stamp",
         'show_footer' => '1',
         'show_divider_lines' => '0',
 
@@ -406,14 +408,22 @@ function render_motherland_opd(array $patient, array $config = [], bool $isPrevi
         <!-- 5. Consultation Writing Canvas (Doctors Rx & Notes) -->
         <div class="ml-consultation-body"></div>
 
-        <!-- 6. Validity Notice -->
-        <?php if (!empty($cfg['show_validity_note'])): ?>
+        <!-- 6. Bottom Meta Row: Validity Notice & Doctor's Signature -->
+        <div class="ml-bottom-meta-row">
             <div class="ml-validity-section ml-block" data-block="block_validity" style="<?= $getPos('block_validity') ?>">
-                <div class="ml-validity-note">
-                    <strong>Note :</strong> <u><em><?= htmlspecialchars($validity, ENT_QUOTES, 'UTF-8') ?></em></u>
-                </div>
+                <?php if (!empty($cfg['show_validity_note'])): ?>
+                    <div class="ml-validity-note">
+                        <strong>Note :</strong> <u><em><?= htmlspecialchars($validity, ENT_QUOTES, 'UTF-8') ?></em></u>
+                    </div>
+                <?php endif; ?>
             </div>
-        <?php endif; ?>
+            <?php if (!empty($cfg['show_signature_box'])): ?>
+                <div class="ml-sign-section">
+                    <div class="ml-sign-line"></div>
+                    <div class="ml-sign-text"><?= htmlspecialchars($cfg['lbl_signature'] ?? "Doctor's Signature / Stamp", ENT_QUOTES, 'UTF-8') ?></div>
+                </div>
+            <?php endif; ?>
+        </div>
 
         <!-- Footer Separator Line -->
         <?php if (!empty($cfg['show_footer'])): ?>
@@ -464,6 +474,7 @@ function render_motherland_opd(array $patient, array $config = [], bool $isPrevi
                         </svg>
                         <span><?= htmlspecialchars($cfg['website'], ENT_QUOTES, 'UTF-8') ?></span>
                     </div>
+                    <div class="ml-page-indicator">Page 1 of <?= $pages ?></div>
                 </div>
             </div>
         <?php endif; ?>
@@ -499,8 +510,25 @@ function render_motherland_opd(array $patient, array $config = [], bool $isPrevi
                 </div>
             <?php endif; ?>
 
+            <!-- Page 2 Continuation Strip -->
+            <div class="ml-page2-strip">
+                <span class="ml-page2-title">CONTINUATION SHEET / CLINICAL NOTES</span>
+                <span class="ml-page2-patient"><?= e($uhid ? 'UHID: ' . $uhid : '') ?><?= e($name ? ' | Patient: ' . $name : '') ?><?= e($date_formatted ? ' | Date: ' . $date_formatted : '') ?></span>
+            </div>
+
             <!-- Full Blank Continuation Notes Canvas (No Patient Table, No Vitals Table, No Title!) -->
             <div class="ml-consultation-body ml-consultation-page-2"></div>
+
+            <!-- Page 2 Doctor's Signature -->
+            <div class="ml-bottom-meta-row">
+                <div></div>
+                <?php if (!empty($cfg['show_signature_box'])): ?>
+                    <div class="ml-sign-section">
+                        <div class="ml-sign-line"></div>
+                        <div class="ml-sign-text"><?= htmlspecialchars($cfg['lbl_signature'] ?? "Doctor's Signature / Stamp", ENT_QUOTES, 'UTF-8') ?></div>
+                    </div>
+                <?php endif; ?>
+            </div>
 
             <!-- Footer Separator Line -->
             <?php if (!empty($cfg['show_footer'])): ?>
@@ -546,6 +574,7 @@ function render_motherland_opd(array $patient, array $config = [], bool $isPrevi
                             </svg>
                             <span><?= htmlspecialchars($cfg['website'], ENT_QUOTES, 'UTF-8') ?></span>
                         </div>
+                        <div class="ml-page-indicator">Page 2 of <?= $pages ?></div>
                     </div>
                 </div>
             <?php endif; ?>
@@ -867,20 +896,21 @@ function get_motherland_opd_css(): string {
     font-weight: 600;
 }
 
-/* Footer Rule */
+/* Footer Rule - Clean Emerald Accent Line */
 .ml-footer-rule {
-    border-top: 0.8pt solid #666666;
-    margin: 1.2mm 0 1.8mm 0;
+    border-top: 1.2pt solid #02872e;
+    margin: 1.5mm 0 2mm 0;
     flex-shrink: 0;
     page-break-inside: avoid;
     break-inside: avoid;
 }
 
-/* 9. Footer Section */
+/* 9. Footer Section - Modern 3-Column Hospital Grid without ugly vertical borders */
 .ml-footer {
     display: grid;
     grid-template-columns: 1.35fr 1fr 1.05fr;
-    font-size: 7.8pt;
+    column-gap: 5mm;
+    font-size: 7.6pt;
     line-height: 1.35;
     color: #111111;
     z-index: 2;
@@ -892,30 +922,30 @@ function get_motherland_opd_css(): string {
 .ml-footer-col {
     display: flex;
     flex-direction: column;
-    gap: 2mm;
+    gap: 1.6mm;
 }
 
 .ml-footer-contact {
-    border-left: 0.75pt solid #888888;
-    padding-left: 4mm;
+    border-left: none;
+    padding-left: 0;
 }
 
 .ml-footer-online {
-    border-left: 0.75pt solid #888888;
-    padding-left: 4mm;
+    border-left: none;
+    padding-left: 0;
 }
 
 .ml-footer-item {
     display: flex;
     align-items: flex-start;
-    gap: 2mm;
+    gap: 1.8mm;
 }
 
 .ml-icon {
-    width: 3.8mm;
-    height: 3.8mm;
+    width: 3.5mm;
+    height: 3.5mm;
     flex-shrink: 0;
-    margin-top: 0.3mm;
+    margin-top: 0.2mm;
 }
 
 .ml-footer-text {
@@ -925,6 +955,73 @@ function get_motherland_opd_css(): string {
 .ml-reg-office {
     margin-top: 0.8mm;
     color: #222222;
+}
+
+/* Bottom Meta Row (Validity Note + Doctor Signature) */
+.ml-bottom-meta-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-top: auto;
+    margin-bottom: 1.5mm;
+    flex-shrink: 0;
+    z-index: 2;
+    page-break-inside: avoid;
+    break-inside: avoid;
+}
+
+.ml-sign-section {
+    width: 48mm;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.ml-sign-line {
+    border-top: 0.9pt dashed #4b5563;
+    margin-bottom: 1.5mm;
+    width: 100%;
+}
+
+.ml-sign-text {
+    font-size: 7.8pt;
+    font-weight: 700;
+    color: #1f2937;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.ml-page-indicator {
+    font-size: 7.2pt;
+    font-weight: 600;
+    color: #64748b;
+    margin-top: 1mm;
+    text-align: right;
+}
+
+/* Page 2 Continuation Strip */
+.ml-page2-strip {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #f8fafc;
+    border-top: 1pt solid #cbd5e1;
+    border-bottom: 1pt solid #cbd5e1;
+    padding: 1.5mm 2mm;
+    margin-top: 2mm;
+    margin-bottom: 3mm;
+    font-size: 8.2pt;
+    z-index: 2;
+}
+
+.ml-page2-title {
+    font-weight: 800;
+    color: #02872e;
+    letter-spacing: 0.4px;
+}
+
+.ml-page2-patient {
+    font-weight: 600;
+    color: #334155;
 }
 
 /* Draggable Block styling for Layout Editor */

@@ -264,18 +264,12 @@ $allTemplates = db()->query('SELECT id, name, template_type, file_path FROM temp
                 padding: 4mm 10mm 4mm 10mm !important;
                 page-break-inside: avoid !important;
                 break-inside: avoid !important;
-                page-break-after: always !important;
-                break-after: page !important;
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
                 overflow: hidden !important;
                 box-sizing: border-box !important;
                 display: flex !important;
                 flex-direction: column !important;
-            }
-            .motherland-sheet:last-child {
-                page-break-after: avoid !important;
-                break-after: avoid !important;
             }
             .motherland-sheet.page-2 {
                 page-break-before: always !important;
@@ -286,15 +280,32 @@ $allTemplates = db()->query('SELECT id, name, template_type, file_path FROM temp
                 flex: 1 1 auto !important;
                 min-height: 20mm !important;
             }
-            .ml-validity-section {
+            .ml-bottom-meta-row {
+                display: flex !important;
+                justify-content: space-between !important;
+                align-items: flex-end !important;
                 margin-top: auto !important;
-                margin-bottom: 1mm !important;
+                margin-bottom: 1.5mm !important;
+                flex-shrink: 0 !important;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+            }
+            .ml-validity-section {
+                flex: 1 !important;
+                margin: 0 !important;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+            }
+            .ml-sign-section {
+                width: 48mm !important;
+                text-align: center !important;
                 flex-shrink: 0 !important;
                 page-break-inside: avoid !important;
                 break-inside: avoid !important;
             }
             .ml-footer-rule {
-                margin: 1mm 0 1.5mm 0 !important;
+                border-top: 1.2pt solid #02872e !important;
+                margin: 1.5mm 0 2mm 0 !important;
                 flex-shrink: 0 !important;
                 page-break-inside: avoid !important;
                 break-inside: avoid !important;
@@ -303,6 +314,11 @@ $allTemplates = db()->query('SELECT id, name, template_type, file_path FROM temp
                 flex-shrink: 0 !important;
                 page-break-inside: avoid !important;
                 break-inside: avoid !important;
+            }
+            .ml-footer-contact,
+            .ml-footer-online {
+                border-left: none !important;
+                padding-left: 0 !important;
             }
         }
 
