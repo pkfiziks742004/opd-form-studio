@@ -7,6 +7,7 @@ $pageTitles = [
     'dashboard.php' => ['Dashboard', "Overview of today's OPD activity & patient visits"],
     'patient_form.php' => ['New OPD Registration', 'Register patient & generate printable slip'],
     'patients.php' => ['Patient Directory', 'Search, filter and manage patient history'],
+    'patient_profile.php' => ['Patient Profile', 'Complete medical visit history & patient records'],
     'template_editor.php' => ['Layout Editor', 'Configure print alignment & slip fields'],
     'templates.php' => ['OPD Templates', 'Manage print slip layouts & paper settings'],
     'users.php' => ['Users & Permissions', 'Manage hospital staff and reception logins'],
@@ -55,7 +56,7 @@ $topSubtitle = $currentTitleInfo[1];
                 New OPD
             </a>
 
-            <a class="<?= $current === 'patients.php' ? 'active' : '' ?>" href="patients.php">
+            <a class="<?= in_array($current, ['patients.php', 'patient_profile.php']) ? 'active' : '' ?>" href="patients.php">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
                     <circle cx="9" cy="7" r="4"></circle>

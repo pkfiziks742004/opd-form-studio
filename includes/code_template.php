@@ -125,9 +125,9 @@ function render_motherland_opd(array $patient, array $config = [], bool $isPrevi
     // Resolve number of pages
     if ($pages <= 0) {
         $pages = (!empty($cfg['default_print_pages']) && (int)$cfg['default_print_pages'] === 2) ? 2 : 1;
-    }
-    if ($pages === 1 && !empty($cfg['enable_two_pages']) && (int)$cfg['enable_two_pages'] === 1) {
-        $pages = 2;
+        if ($pages === 1 && !empty($cfg['enable_two_pages']) && (int)$cfg['enable_two_pages'] === 1) {
+            $pages = 2;
+        }
     }
 
     $uhid = $patient['uhid'] ?? '';
@@ -561,12 +561,12 @@ function get_motherland_opd_css(): string {
 .motherland-sheet {
     position: relative;
     width: 210mm;
-    min-height: 297mm;
-    height: 297mm;
+    height: 295mm;
+    max-height: 295mm;
     margin: 0 auto;
     background: #ffffff;
     box-sizing: border-box;
-    padding: 8mm 14mm 10mm 14mm;
+    padding: 6mm 12mm 6mm 12mm;
     font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
     color: #111111;
     overflow: hidden;
@@ -831,18 +831,22 @@ function get_motherland_opd_css(): string {
 
 /* 7. Consultation Writing Area */
 .ml-consultation-body {
-    flex: 1;
-    min-height: 120mm;
+    flex: 1 1 auto;
+    min-height: 0;
     z-index: 2;
 }
 
 .ml-consultation-page-2 {
-    min-height: 250mm;
+    flex: 1 1 auto;
+    min-height: 0;
+    z-index: 2;
 }
 
 /* 8. Validity Note */
 .ml-validity-section {
-    margin-bottom: 1mm;
+    margin-top: auto;
+    margin-bottom: 1.5mm;
+    flex-shrink: 0;
     z-index: 2;
 }
 
@@ -861,6 +865,13 @@ function get_motherland_opd_css(): string {
     font-weight: 600;
 }
 
+/* Footer Rule */
+.ml-footer-rule {
+    border-top: 0.8pt solid #666666;
+    margin: 1.5mm 0 2mm 0;
+    flex-shrink: 0;
+}
+
 /* 9. Footer Section */
 .ml-footer {
     display: grid;
@@ -869,6 +880,7 @@ function get_motherland_opd_css(): string {
     line-height: 1.35;
     color: #111111;
     z-index: 2;
+    flex-shrink: 0;
 }
 
 .ml-footer-col {

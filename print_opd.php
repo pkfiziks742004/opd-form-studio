@@ -219,12 +219,18 @@ $allTemplates = db()->query('SELECT id, name, template_type, file_path FROM temp
 
         @page {
             size: A4 portrait;
-            margin: 0;
+            margin: 0mm !important;
         }
 
         @media print {
-            body {
+            html, body {
+                width: 210mm !important;
+                height: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
                 background: #fff !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
             }
             .toolbar {
                 display: none !important;
@@ -233,8 +239,9 @@ $allTemplates = db()->query('SELECT id, name, template_type, file_path FROM temp
                 margin: 0 !important;
                 box-shadow: none !important;
                 width: 210mm !important;
-                height: 297mm !important;
+                height: 295mm !important;
                 page-break-after: avoid !important;
+                break-after: avoid !important;
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
             }
@@ -250,17 +257,23 @@ $allTemplates = db()->query('SELECT id, name, template_type, file_path FROM temp
                 margin: 0 !important;
                 box-shadow: none !important;
                 width: 210mm !important;
-                height: 297mm !important;
-                max-height: 297mm !important;
+                height: 295mm !important;
+                max-height: 295mm !important;
                 page-break-after: always !important;
+                break-after: page !important;
                 page-break-inside: avoid !important;
+                break-inside: avoid !important;
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
+                overflow: hidden !important;
             }
             .motherland-sheet:last-child {
                 page-break-after: avoid !important;
-            }            .motherland-sheet.page-2 {
+                break-after: avoid !important;
+            }
+            .motherland-sheet.page-2 {
                 page-break-before: always !important;
+                break-before: page !important;
                 margin: 0 !important;
             }
         }
