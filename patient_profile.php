@@ -75,14 +75,14 @@ $yesterday = date('Y-m-d', strtotime('-1 day'));
             </svg>
             <span>+ Revisit Patient (New OPD Slip)</span>
         </a>
-        <a href="print_opd.php?id=<?= $patient['id'] ?>" target="_blank" class="btn-profile-head print" style="padding: 10px 16px; font-size: 13px;">
+        <button type="button" onclick="openPrintModal(<?= (int)$patient['id'] ?>, '<?= e(addslashes($patient['name'])) ?>', '<?= e(addslashes($patient['uhid'])) ?>')" class="btn-profile-head print" style="padding: 10px 16px; font-size: 13px; cursor: pointer; border: none; font-family: inherit;">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="6 9 6 2 18 2 18 9"></polyline>
                 <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
                 <rect x="6" y="14" width="12" height="8"></rect>
             </svg>
             <span>Print Latest Slip</span>
-        </a>
+        </button>
     </div>
 </div>
 
@@ -294,14 +294,14 @@ $yesterday = date('Y-m-d', strtotime('-1 day'));
                                 <?php endif; ?>
                             </div>
 
-                            <a href="print_opd.php?id=<?= $v['id'] ?>" target="_blank" class="btn-visit-print" title="Print this visit slip">
+                            <button type="button" onclick="openPrintModal(<?= (int)$v['id'] ?>, '<?= e(addslashes($patient['name'])) ?>', '<?= e(addslashes($patient['uhid'])) ?>')" class="btn-visit-print" title="Print this visit slip" style="cursor: pointer; border: none; font-family: inherit;">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <polyline points="6 9 6 2 18 2 18 9"></polyline>
                                     <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
                                     <rect x="6" y="14" width="12" height="8"></rect>
                                 </svg>
                                 <span>Print Slip</span>
-                            </a>
+                            </button>
                         </div>
 
                         <div class="visit-chips-grid">

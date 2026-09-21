@@ -610,3 +610,178 @@ function initNotificationSystem() {
         fetchNotifications(false);
     }, 30000);
 }
+
+// =========================================================================
+// ULTRA-PREMIUM OPD PRINT MODAL CONTROLLER
+// =========================================================================
+let currentPrintModal = {
+    patientId: 0,
+    patientName: '',
+    uhid: '',
+    templateId: 0,
+    pages: 1
+};
+
+window.openPrintModal = function(patientId, patientName = '', uhid = '', templateId = 0, pages = 1) {
+    const backdrop = document.getElementById('printModalBackdrop');
+    const frame = document.getElementById('printModalFrame');
+    const loader = document.getElementById('printModalLoader');
+    const badge = document.getElementById('printModalPatientBadge');
+    const subText = document.getElementById('printModalSubText');
+    const btnPage1 = document.getElementById('btnPageTab1');
+    const btnPage2 = document.getElementById('btnPageTab2');
+    const tplSelect = document.getElementById('printModalTemplateSelect');
+    const btnText = document.getElementById('btnPrintModalBtnText');
+
+    if (!backdrop || !frame) {
+        window.location.href = `print_opd.php?id=${patientId}`;
+        return;
+    }
+
+    currentPrintModal.patientId = parseInt(patientId, 10) || 0;
+    currentPrintModal.patientName = patientName || '';
+    currentPrintModal.uhid = uhid || '';
+    currentPrintModal.templateId = parseInt(templateId, 10) || 0;
+    currentPrintModal.pages = parseInt(pages, 10) || 1;
+
+    if (badge) {
+        badge.textContent = patientName ? `${patientName} (${uhid || 'OPD'})` : (uhid || 'Patient Slip');
+    }
+    if (subText) {
+        subText.textContent = patientName ? `OPD Consultation Slip · UHID: ${uhid || '—'}` : 'Motherland Hospital OPD Consultation Sheet';
+    }
+
+    if (btnPage1 && btnPage2) {
+        btnPage1.classList.toggle('active', currentPrintModal.pages === 1);
+        btnPage2.classList.toggle('active', currentPrintModal.pages === 2);
+    }
+
+    if (btnText) {
+        btnText.textContent = currentPrintModal.pages === 2 ? 'Print Slip (2 Pages)' : 'Print Slip';
+    }
+
+    if (tplSelect && currentPrintModal.templateId > 0) {
+        tplSelect.value = String(currentPrintModal.templateId);
+    }
+
+    let url = `print_opd.php?id=${currentPrintModal.patientId}&modal=1&pages=${currentPrintModal.pages}`;
+    if (currentPrintModal.templateId > 0) {
+        url += `&template_id=${currentPrintModal.templateId}`;
+    }
+
+    if (loader) loader.classList.add('active');
+    frame.onload = function() {
+        if (loader) loader.classList.remove('active');
+    };
+    frame.src = url;
+
+    backdrop.style.display = 'flex';
+    requestAnimationFrame(() => {
+        backdrop.classList.add('active');
+        document.body.style.overflow = 'hidden';
+    });
+};
+
+window.closePrintModal = function() {
+    const backdrop = document.getElementById('printModalBackdrop');
+    const frame = document.getElementById('printModalFrame');
+    if (!backdrop) return;
+
+    backdrop.classList.remove('active');
+    document.body.style.overflow = '';
+    setTimeout(() => {
+        backdrop.style.display = 'none';
+        if (frame) frame.src = 'about:blank';
+    }, 220);
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+    initPrintModal();
+});
+
+function initPrintModal() {
+    const backdrop = document.getElementById('printModalBackdrop');
+    const closeBtn = document.getElementById('btnClosePrintModal');
+    const printTrigger = document.getElementById('btnPrintModalTrigger');
+    const btnPage1 = document.getElementById('btnPageTab1');
+    const btnPage2 = document.getElementById('btnPageTab2');
+    const tplSelect = document.getElementById('printModalTemplateSelect');
+    const frame = document.getElementById('printModalFrame');
+    const loader = document.getElementById('printModalLoader');
+    const btnText = document.getElementById('btnPrintModalBtnText');
+
+    if (closeBtn) {
+        closeBtn.addEventListener('click', window.closePrintModal);
+    }
+
+    if (backdrop) {
+        backdrop.addEventListener('click', (e) => {
+            if (e.target === backdrop) {
+                window.closePrintModal();
+            }
+        });
+    }
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            const b = document.getElementById('printModalBackdrop');
+            if (b && b.classList.contains('active')) {
+                window.closePrintModal();
+            }
+        }
+    });
+
+    if (printTrigger && frame) {
+        printTrigger.addEventListener('click', () => {
+            try {
+                if (frame.contentWindow) {
+                    frame.contentWindow.focus();
+                    frame.contentWindow.print();
+                }
+            } catch (err) {
+                console.error('Frame print failed:', err);
+                frame.focus();
+                window.print();
+            }
+        });
+    }
+
+    function reloadModalFrame() {
+        if (!frame) return;
+        if (loader) loader.classList.add('active');
+        let url = `print_opd.php?id=${currentPrintModal.patientId}&modal=1&pages=${currentPrintModal.pages}`;
+        if (currentPrintModal.templateId > 0) {
+            url += `&template_id=${currentPrintModal.templateId}`;
+        }
+        frame.src = url;
+    }
+
+    if (btnPage1) {
+        btnPage1.addEventListener('click', () => {
+            if (currentPrintModal.pages === 1) return;
+            currentPrintModal.pages = 1;
+            btnPage1.classList.add('active');
+            if (btnPage2) btnPage2.classList.remove('active');
+            if (btnText) btnText.textContent = 'Print Slip';
+            reloadModalFrame();
+        });
+    }
+
+    if (btnPage2) {
+        btnPage2.addEventListener('click', () => {
+            if (currentPrintModal.pages === 2) return;
+            currentPrintModal.pages = 2;
+            btnPage2.classList.add('active');
+            if (btnPage1) btnPage1.classList.remove('active');
+            if (btnText) btnText.textContent = 'Print Slip (2 Pages)';
+            reloadModalFrame();
+        });
+    }
+
+    if (tplSelect) {
+        tplSelect.addEventListener('change', () => {
+            currentPrintModal.templateId = parseInt(tplSelect.value, 10) || 0;
+            reloadModalFrame();
+        });
+    }
+}

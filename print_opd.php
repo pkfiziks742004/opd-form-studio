@@ -6,6 +6,7 @@ $user = require_login();
 $id = (int)($_GET['id'] ?? 0);
 $templateId = (int)($_GET['template_id'] ?? 0);
 $pages = (int)($_GET['pages'] ?? 0);
+$isModal = !empty($_GET['modal']);
 
 if ($id > 0) {
     $st = db()->prepare('SELECT * FROM patients WHERE id=?');
@@ -258,16 +259,34 @@ $allTemplates = db()->query('SELECT id, name, template_type, file_path FROM temp
             }
             .motherland-sheet:last-child {
                 page-break-after: avoid !important;
-            }
-            .motherland-sheet.page-2 {
+            }            .motherland-sheet.page-2 {
                 page-break-before: always !important;
                 margin: 0 !important;
             }
         }
+
+        <?php if ($isModal): ?>
+        body {
+            background: #eef2f6 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        .toolbar {
+            display: none !important;
+        }
+        .code-sheet-wrapper {
+            margin: 18px auto 36px !important;
+            gap: 22px !important;
+        }
+        .sheet {
+            margin: 18px auto 36px !important;
+        }
+        <?php endif; ?>
     </style>
 </head>
 <body>
 
+<?php if (!$isModal): ?>
 <div class="toolbar">
     <div class="toolbar-info">
         <div>
@@ -283,20 +302,18 @@ $allTemplates = db()->query('SELECT id, name, template_type, file_path FROM temp
             <?php endforeach; ?>
         </select>
         <?php endif; ?>
-
-        <?php if ($isCode): ?>
-            <div class="page-toggle-group">
-                <a href="print_opd.php?id=<?= $id ?>&template_id=<?= $tpl['id'] ?>&pages=1" class="<?= $pages === 1 ? 'btn-active' : '' ?>">1 Page</a>
-                <a href="print_opd.php?id=<?= $id ?>&template_id=<?= $tpl['id'] ?>&pages=2" class="<?= $pages === 2 ? 'btn-active' : '' ?>">2 Pages</a>
-            </div>
-        <?php endif; ?>
     </div>
     <div class="toolbar-actions">
-        <a href="patient_form.php" class="btn-next-patient" id="btnNextPatient" title="Register Next Patient (Alt+N)">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
-            + Register Next Patient
+        <!-- 1 Page / 2 Pages Toggle -->
+        <div class="page-toggle-group">
+            <a href="print_opd.php?id=<?= $id ?>&template_id=<?= $tpl['id'] ?>&pages=1" class="<?= $pages === 1 ? 'btn-active' : '' ?>" title="Print 1 Page (Prescription only)">1 Page</a>
+            <a href="print_opd.php?id=<?= $id ?>&template_id=<?= $tpl['id'] ?>&pages=2" class="<?= $pages === 2 ? 'btn-active' : '' ?>" title="Print 2 Pages (with consultation notes)">2 Pages</a>
+        </div>
+
+        <a href="patient_form.php" class="btn-next-patient" title="Register New Patient (Alt+N)">
+            + + Register Next Patient
         </a>
-        <button onclick="window.print()" class="btn-print-action">
+        <button class="btn-print-action" onclick="window.print()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
             Print Slip (<?= $pages ?> Page<?= $pages > 1 ? 's' : '' ?>)
         </button>
@@ -319,6 +336,7 @@ document.addEventListener('keydown', function(e) {
     }
 });
 </script>
+<?php endif; ?>
 
 <?php if ($isCode): ?>
     <div class="code-sheet-wrapper">

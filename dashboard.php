@@ -33,14 +33,14 @@ if ($yesterday > 0) {
         <span>Register New Patient</span>
     </a>
     <?php if ($last): ?>
-        <a href="print_opd.php?id=<?= $last['id'] ?>" target="_blank" class="btn-quick-action">
+        <button type="button" onclick="openPrintModal(<?= (int)$last['id'] ?>, '<?= e(addslashes($last['name'])) ?>', '<?= e(addslashes($last['uhid'])) ?>')" class="btn-quick-action" style="cursor: pointer; border: none;">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="6 9 6 2 18 2 18 9"></polyline>
                 <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
                 <rect x="6" y="14" width="12" height="8"></rect>
             </svg>
             <span>Print Last Slip (<?= e($last['uhid']) ?>)</span>
-        </a>
+        </button>
     <?php endif; ?>
     <a href="patients.php" class="btn-quick-action">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -164,14 +164,14 @@ if ($yesterday > 0) {
                         </svg>
                         <span>Revisit</span>
                     </a>
-                    <a class="btn-print-opd-soft" href="print_opd.php?id=<?= $last['id'] ?>" target="_blank" title="Print OPD Slip">
+                    <button type="button" class="btn-print-opd-soft" onclick="openPrintModal(<?= (int)$last['id'] ?>, '<?= e(addslashes($last['name'])) ?>', '<?= e(addslashes($last['uhid'])) ?>')" title="Print OPD Slip" style="cursor: pointer; border: none;">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <polyline points="6 9 6 2 18 2 18 9"></polyline>
                             <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
                             <rect x="6" y="14" width="12" height="8"></rect>
                         </svg>
                         <span>Print Slip</span>
-                    </a>
+                    </button>
                 </div>
             <?php endif; ?>
         </div>
@@ -578,14 +578,14 @@ if ($yesterday > 0) {
                                         </svg>
                                         <span>Revisit</span>
                                     </a>
-                                    <a class="btn-table-action print" href="print_opd.php?id=<?= $p['id'] ?>" target="_blank" title="Print OPD Slip">
+                                    <button type="button" class="btn-table-action print" onclick="openPrintModal(<?= (int)$p['id'] ?>, '<?= e(addslashes($p['name'])) ?>', '<?= e(addslashes($p['uhid'])) ?>')" title="Print OPD Slip" style="cursor: pointer; border: none; font-family: inherit;">
                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                             <polyline points="6 9 6 2 18 2 18 9"></polyline>
                                             <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
                                             <rect x="6" y="14" width="12" height="8"></rect>
                                         </svg>
                                         <span>Print</span>
-                                    </a>
+                                    </button>
                                 </div>
                             </td>
                         </tr>

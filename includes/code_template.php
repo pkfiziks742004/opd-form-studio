@@ -241,16 +241,14 @@ function render_motherland_opd(array $patient, array $config = [], bool $isPrevi
             <div class="ml-title-section ml-block" data-block="block_title" style="<?= $getPos('block_title') ?>">
                 <h1 class="ml-title"><?= htmlspecialchars($cfg['doc_title'], ENT_QUOTES, 'UTF-8') ?></h1>
             </div>
-            <?php if (!empty($cfg['show_divider_lines'])): ?>
-                <div class="ml-divider-rule"></div>
-            <?php endif; ?>
+            <div class="ml-divider-rule"></div>
         <?php endif; ?>
 
-        <!-- 3. Patient Information & Billing (Two Columns) -->
+        <!-- 3. Patient Information & Billing (Two Columns - No Vertical Divider) -->
         <?php if (!empty($cfg['show_patient_info'])): ?>
             <div class="ml-meta-grid ml-block" data-block="block_meta" style="<?= $getPos('block_meta') ?>">
                 <!-- Left Column -->
-                <div class="ml-meta-col ml-col-left" style="<?= empty($cfg['show_divider_lines']) ? 'border-right: none;' : '' ?>">
+                <div class="ml-meta-col ml-col-left">
                     <?php if (!empty($cfg['show_uhid'])): ?>
                         <div class="ml-field-row" data-field="uhid">
                             <span class="ml-label"><?= htmlspecialchars($cfg['lbl_uhid'], ENT_QUOTES, 'UTF-8') ?></span>
@@ -351,9 +349,7 @@ function render_motherland_opd(array $patient, array $config = [], bool $isPrevi
                     <?php endif; ?>
                 </div>
             </div>
-            <?php if (!empty($cfg['show_divider_lines'])): ?>
-                <div class="ml-divider-rule ml-meta-bottom-rule"></div>
-            <?php endif; ?>
+            <div class="ml-divider-rule ml-meta-bottom-rule"></div>
         <?php endif; ?>
 
         <!-- 4. Combined Doctor Banner & Vitals Box -->
@@ -421,9 +417,7 @@ function render_motherland_opd(array $patient, array $config = [], bool $isPrevi
 
         <!-- Footer Separator Line -->
         <?php if (!empty($cfg['show_footer'])): ?>
-            <?php if (!empty($cfg['show_divider_lines'])): ?>
-                <div class="ml-divider-rule ml-footer-rule"></div>
-            <?php endif; ?>
+            <div class="ml-divider-rule ml-footer-rule"></div>
 
             <!-- 7. 3-Column Footer -->
             <div class="ml-footer ml-block" data-block="block_footer" style="<?= $getPos('block_footer') ?>">
@@ -510,9 +504,7 @@ function render_motherland_opd(array $patient, array $config = [], bool $isPrevi
 
             <!-- Footer Separator Line -->
             <?php if (!empty($cfg['show_footer'])): ?>
-                <?php if (!empty($cfg['show_divider_lines'])): ?>
-                    <div class="ml-divider-rule ml-footer-rule"></div>
-                <?php endif; ?>
+                <div class="ml-divider-rule ml-footer-rule"></div>
 
                 <!-- 3-Column Footer -->
                 <div class="ml-footer">

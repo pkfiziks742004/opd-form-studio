@@ -51,14 +51,14 @@
                         </svg>
                         <span>Full Profile</span>
                     </a>
-                    <a href="#" id="modalPrintBtn" target="_blank" class="btn-profile-head print" title="Print latest OPD visit slip">
+                    <button type="button" id="modalPrintBtn" class="btn-profile-head print" title="Print latest OPD visit slip" style="cursor: pointer; border: none; font-family: inherit;">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <polyline points="6 9 6 2 18 2 18 9"></polyline>
                             <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
                             <rect x="6" y="14" width="12" height="8"></rect>
                         </svg>
                         <span>Print Slip</span>
-                    </a>
+                    </button>
                     <button type="button" class="btn-modal-close" onclick="closePatientModal()" title="Close (Esc)">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                             <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -325,7 +325,12 @@ window.openPatientModal = function(patientId, uhid) {
             if (bottomRevBtn) bottomRevBtn.href = revisitUrl;
             if (timelineRevBtn) timelineRevBtn.href = revisitUrl;
             if (fullPageBtn) fullPageBtn.href = fullProfileUrl;
-            if (printBtn) printBtn.href = printLatestUrl;
+            if (printBtn) {
+                printBtn.onclick = (e) => {
+                    e.preventDefault();
+                    openPrintModal(p.id, p.name, p.uhid);
+                };
+            }
 
             // Render Timeline Items
             const timelineList = document.getElementById('modalTimelineList');
@@ -362,14 +367,14 @@ window.openPatientModal = function(patientId, uhid) {
                                         <span class="visit-time-main">${v.visit_time}</span>
                                         ${v.relative_date ? `<span class="visit-relative-badge">${v.relative_date}</span>` : ''}
                                     </div>
-                                    <a href="print_opd.php?id=${v.id}" target="_blank" class="btn-visit-print" title="Print this specific OPD slip">
+                                    <button type="button" class="btn-visit-print" onclick="openPrintModal(${v.id}, '${(p.name || '').replace(/'/g, "\\'")}', '${(p.uhid || '').replace(/'/g, "\\'")}')" title="Print this specific OPD slip" style="cursor: pointer; border: none; font-family: inherit;">
                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                             <polyline points="6 9 6 2 18 2 18 9"></polyline>
                                             <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
                                             <rect x="6" y="14" width="12" height="8"></rect>
                                         </svg>
                                         <span>Print Slip</span>
-                                    </a>
+                                    </button>
                                 </div>
 
                                 <div class="visit-chips-grid">
