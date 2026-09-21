@@ -50,6 +50,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $checkboxKeys = [
             'show_watermark', 'enable_two_pages', 'show_header', 'show_title',
             'show_patient_info', 'show_doctor_box', 'show_vitals', 'show_validity_note', 'show_footer',
+            'show_divider_lines',
             'show_uhid', 'show_name', 'show_age_sex', 'show_guardian', 'show_contact', 'show_address',
             'show_bill', 'show_date', 'show_panel', 'show_dept', 'show_room', 'show_app',
             'show_vital_height', 'show_vital_weight', 'show_vital_temp', 'show_vital_pulse',
@@ -537,6 +538,10 @@ $defaultPrintPages = (string)($cfg['default_print_pages'] ?? '1');
                     <label class="switch-label">
                         <span style="font-weight: 700; color: #11382b; font-size: 13.5px;">Hospital Watermark</span>
                         <input type="checkbox" name="show_watermark" value="1" <?= !empty($cfg['show_watermark']) ? 'checked' : '' ?>>
+                    </label>
+                    <label class="switch-label">
+                        <span style="font-weight: 700; color: #11382b; font-size: 13.5px;">Divider Lines (Borders)</span>
+                        <input type="checkbox" name="show_divider_lines" value="1" <?= !empty($cfg['show_divider_lines']) ? 'checked' : '' ?>>
                     </label>
                 </div>
             </div>
