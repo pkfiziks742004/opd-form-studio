@@ -26,6 +26,23 @@
     const btnSavePageSettings = document.getElementById('btnSavePageSettings');
     const previewBtn = document.getElementById('previewBtn');
 
+    // Studio Sidebar Segmented Tab Switching
+    const tabButtons = document.querySelectorAll('.studio-tab-btn');
+    const tabPanes = document.querySelectorAll('.studio-tab-pane');
+    tabButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const targetTab = btn.dataset.tab;
+            tabButtons.forEach(b => {
+                const isActive = (b === btn);
+                b.classList.toggle('active', isActive);
+                b.setAttribute('aria-selected', isActive ? 'true' : 'false');
+            });
+            tabPanes.forEach(pane => {
+                pane.classList.toggle('active', pane.id === targetTab);
+            });
+        });
+    });
+
     if (!paper) return;
 
     let selected = null;
@@ -256,7 +273,9 @@
         // Update badge
         const badgeDot = document.getElementById('badgeThemeDot');
         const badgeName = document.getElementById('badgeThemeName');
+        const tabThemeDot = document.getElementById('tabThemeDot');
         if (badgeDot) badgeDot.style.background = c.primary;
+        if (tabThemeDot) tabThemeDot.style.background = c.primary;
         if (badgeName) {
             const pName = themePresets[themeState.preset] ? themePresets[themeState.preset].name : 'Custom Theme';
             badgeName.textContent = pName;
