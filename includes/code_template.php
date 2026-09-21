@@ -510,25 +510,8 @@ function render_motherland_opd(array $patient, array $config = [], bool $isPrevi
                 </div>
             <?php endif; ?>
 
-            <!-- Page 2 Continuation Strip -->
-            <div class="ml-page2-strip">
-                <span class="ml-page2-title">CONTINUATION SHEET / CLINICAL NOTES</span>
-                <span class="ml-page2-patient"><?= e($uhid ? 'UHID: ' . $uhid : '') ?><?= e($name ? ' | Patient: ' . $name : '') ?><?= e($date_formatted ? ' | Date: ' . $date_formatted : '') ?></span>
-            </div>
-
-            <!-- Full Blank Continuation Notes Canvas (No Patient Table, No Vitals Table, No Title!) -->
+            <!-- Full Blank Continuation Canvas (Only Header & Footer on Page 2) -->
             <div class="ml-consultation-body ml-consultation-page-2"></div>
-
-            <!-- Page 2 Doctor's Signature -->
-            <div class="ml-bottom-meta-row">
-                <div></div>
-                <?php if (!empty($cfg['show_signature_box'])): ?>
-                    <div class="ml-sign-section">
-                        <div class="ml-sign-line"></div>
-                        <div class="ml-sign-text"><?= htmlspecialchars($cfg['lbl_signature'] ?? "Doctor's Signature / Stamp", ENT_QUOTES, 'UTF-8') ?></div>
-                    </div>
-                <?php endif; ?>
-            </div>
 
             <!-- Footer Separator Line -->
             <?php if (!empty($cfg['show_footer'])): ?>
