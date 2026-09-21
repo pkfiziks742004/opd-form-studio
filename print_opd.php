@@ -224,7 +224,7 @@ $allTemplates = db()->query('SELECT id, name, template_type, file_path FROM temp
 
         @media print {
             html, body {
-                width: 210mm !important;
+                width: 100% !important;
                 height: 100% !important;
                 margin: 0 !important;
                 padding: 0 !important;
@@ -236,10 +236,10 @@ $allTemplates = db()->query('SELECT id, name, template_type, file_path FROM temp
                 display: none !important;
             }
             .sheet {
-                margin: 0 !important;
+                margin: 0 auto !important;
                 box-shadow: none !important;
                 width: 210mm !important;
-                height: 295mm !important;
+                height: 270mm !important;
                 page-break-after: avoid !important;
                 break-after: avoid !important;
                 -webkit-print-color-adjust: exact !important;
@@ -254,18 +254,24 @@ $allTemplates = db()->query('SELECT id, name, template_type, file_path FROM temp
                 gap: 0 !important;
             }
             .motherland-sheet {
-                margin: 0 !important;
+                margin: 0 auto !important;
                 box-shadow: none !important;
-                width: 210mm !important;
-                height: 295mm !important;
-                max-height: 295mm !important;
-                page-break-after: always !important;
-                break-after: page !important;
+                width: 100% !important;
+                max-width: 210mm !important;
+                height: 270mm !important;
+                max-height: 270mm !important;
+                min-height: 260mm !important;
+                padding: 4mm 10mm 4mm 10mm !important;
                 page-break-inside: avoid !important;
                 break-inside: avoid !important;
+                page-break-after: always !important;
+                break-after: page !important;
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
                 overflow: hidden !important;
+                box-sizing: border-box !important;
+                display: flex !important;
+                flex-direction: column !important;
             }
             .motherland-sheet:last-child {
                 page-break-after: avoid !important;
@@ -274,25 +280,49 @@ $allTemplates = db()->query('SELECT id, name, template_type, file_path FROM temp
             .motherland-sheet.page-2 {
                 page-break-before: always !important;
                 break-before: page !important;
-                margin: 0 !important;
+                margin: 0 auto !important;
+            }
+            .ml-consultation-body {
+                flex: 1 1 auto !important;
+                min-height: 20mm !important;
+            }
+            .ml-validity-section {
+                margin-top: auto !important;
+                margin-bottom: 1mm !important;
+                flex-shrink: 0 !important;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+            }
+            .ml-footer-rule {
+                margin: 1mm 0 1.5mm 0 !important;
+                flex-shrink: 0 !important;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+            }
+            .ml-footer {
+                flex-shrink: 0 !important;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
             }
         }
 
         <?php if ($isModal): ?>
-        body {
-            background: #eef2f6 !important;
-            margin: 0 !important;
-            padding: 0 !important;
-        }
-        .toolbar {
-            display: none !important;
-        }
-        .code-sheet-wrapper {
-            margin: 18px auto 36px !important;
-            gap: 22px !important;
-        }
-        .sheet {
-            margin: 18px auto 36px !important;
+        @media screen {
+            body {
+                background: #eef2f6 !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+            .toolbar {
+                display: none !important;
+            }
+            .code-sheet-wrapper {
+                margin: 18px auto 36px !important;
+                gap: 22px !important;
+            }
+            .sheet {
+                margin: 18px auto 36px !important;
+            }
         }
         <?php endif; ?>
     </style>

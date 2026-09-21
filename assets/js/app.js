@@ -679,6 +679,7 @@ window.openPrintModal = function(patientId, patientName = '', uhid = '', templat
     requestAnimationFrame(() => {
         backdrop.classList.add('active');
         document.body.style.overflow = 'hidden';
+        document.body.classList.add('print-modal-open');
     });
 };
 
@@ -689,6 +690,7 @@ window.closePrintModal = function() {
 
     backdrop.classList.remove('active');
     document.body.style.overflow = '';
+    document.body.classList.remove('print-modal-open');
     setTimeout(() => {
         backdrop.style.display = 'none';
         if (frame) frame.src = 'about:blank';
@@ -723,10 +725,20 @@ function initPrintModal() {
     }
 
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-            const b = document.getElementById('printModalBackdrop');
-            if (b && b.classList.contains('active')) {
-                window.closePrintModal();
+        const b = document.getElementById('printModalBackdrop');
+        const isOpen = b && b.classList.contains('active');
+        if (e.key === 'Escape' && isOpen) {
+            window.closePrintModal();
+        }
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'p' || e.key === 'P') && isOpen) {
+            e.preventDefault();
+            if (frame && frame.contentWindow) {
+                try {
+                    frame.contentWindow.focus();
+                    frame.contentWindow.print();
+                } catch (err) {
+                    console.error('Frame print failed:', err);
+                }
             }
         }
     });

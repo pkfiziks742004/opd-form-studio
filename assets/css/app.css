@@ -3930,3 +3930,35 @@ td small {
     display: block;
     background: transparent;
 }
+
+@media print {
+    body.print-modal-open .app-sidebar,
+    body.print-modal-open .app-topbar,
+    body.print-modal-open .page-content,
+    body.print-modal-open .print-modal-header,
+    body.print-modal-open .print-modal-loader,
+    body.print-modal-open .flash-messages {
+        display: none !important;
+    }
+    body.print-modal-open .print-modal-backdrop {
+        position: static !important;
+        background: transparent !important;
+        padding: 0 !important;
+        display: block !important;
+        width: 100% !important;
+        height: 100% !important;
+    }
+    body.print-modal-open .print-modal-card {
+        box-shadow: none !important;
+        border: none !important;
+        width: 100% !important;
+        height: 100% !important;
+        max-width: none !important;
+        border-radius: 0 !important;
+    }
+    body.print-modal-open .print-modal-viewport {
+        background: transparent !important;
+        padding: 0 !important;
+        overflow: visible !important;
+    }
+}

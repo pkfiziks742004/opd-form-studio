@@ -561,12 +561,12 @@ function get_motherland_opd_css(): string {
 .motherland-sheet {
     position: relative;
     width: 210mm;
-    height: 295mm;
-    max-height: 295mm;
+    height: 272mm;
+    max-height: 275mm;
     margin: 0 auto;
     background: #ffffff;
     box-sizing: border-box;
-    padding: 6mm 12mm 6mm 12mm;
+    padding: 4mm 10mm 4mm 10mm;
     font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
     color: #111111;
     overflow: hidden;
@@ -845,9 +845,11 @@ function get_motherland_opd_css(): string {
 /* 8. Validity Note */
 .ml-validity-section {
     margin-top: auto;
-    margin-bottom: 1.5mm;
+    margin-bottom: 1.2mm;
     flex-shrink: 0;
     z-index: 2;
+    page-break-inside: avoid;
+    break-inside: avoid;
 }
 
 .ml-validity-note {
@@ -868,8 +870,10 @@ function get_motherland_opd_css(): string {
 /* Footer Rule */
 .ml-footer-rule {
     border-top: 0.8pt solid #666666;
-    margin: 1.5mm 0 2mm 0;
+    margin: 1.2mm 0 1.8mm 0;
     flex-shrink: 0;
+    page-break-inside: avoid;
+    break-inside: avoid;
 }
 
 /* 9. Footer Section */
@@ -881,6 +885,8 @@ function get_motherland_opd_css(): string {
     color: #111111;
     z-index: 2;
     flex-shrink: 0;
+    page-break-inside: avoid;
+    break-inside: avoid;
 }
 
 .ml-footer-col {
@@ -944,6 +950,25 @@ function get_motherland_opd_css(): string {
 }
 
 @media print {
+    .motherland-sheet {
+        box-shadow: none !important;
+        margin: 0 auto !important;
+        height: 270mm !important;
+        max-height: 270mm !important;
+        padding: 4mm 10mm 4mm 10mm !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        overflow: hidden !important;
+    }
+    .motherland-sheet:last-child {
+        page-break-after: avoid !important;
+        break-after: avoid !important;
+    }
+    .motherland-sheet.page-2 {
+        page-break-before: always !important;
+        break-before: page !important;
+        margin: 0 auto !important;
+    }
     .page-2 {
         page-break-before: always !important;
         margin-top: 0 !important;
