@@ -8,6 +8,7 @@ $pageTitles = [
     'patient_form.php' => ['New OPD Registration', 'Register patient & generate printable slip'],
     'patients.php' => ['Patient Directory', 'Search, filter and manage patient history'],
     'patient_profile.php' => ['Patient Profile', 'Complete medical visit history & patient records'],
+    'doctors.php' => ['Doctors & Departments', 'Manage hospital medical staff, specialties & consultation rooms'],
     'template_editor.php' => ['Layout Editor', 'Configure print alignment & slip fields'],
     'templates.php' => ['OPD Templates', 'Manage print slip layouts & paper settings'],
     'users.php' => ['Users & Permissions', 'Manage hospital staff and reception logins'],
@@ -65,6 +66,15 @@ $topSubtitle = $currentTitleInfo[1];
                     <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
                 </svg>
                 Patients
+            </a>
+
+            <a class="<?= $current === 'doctors.php' ? 'active' : '' ?>" href="doctors.php">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1a.2.2 0 1 0 .3.3"></path>
+                    <path d="M8 15v1a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6v-4"></path>
+                    <circle cx="20" cy="10" r="2"></circle>
+                </svg>
+                Doctors & Depts
             </a>
 
             <a class="<?= $current === 'template_editor.php' ? 'active' : '' ?>" href="template_editor.php">

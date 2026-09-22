@@ -1,4 +1,6 @@
 <?php
+declare(strict_types=1);
+
 require_once __DIR__ . '/includes/auth.php';
 $user = require_admin();
 require_once __DIR__ . '/includes/settings.php';
@@ -7,30 +9,193 @@ require_once __DIR__ . '/includes/code_template.php';
 require_once __DIR__ . '/includes/page_engine.php';
 require_once __DIR__ . '/includes/theme_engine.php';
 
+// Active Tab navigation
+$activeTab = $_GET['tab'] ?? 'all';
+if (!in_array($activeTab, ['all', 'customizer', 'images'], true)) {
+    $activeTab = 'all';
+}
+
 // Handle POST actions
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     verify_csrf();
+    $action = $_POST['action'] ?? '';
 
-    // 1. Toggle template status (Active / Blocked)
-    if (isset($_POST['toggle_id'])) {
-        $id = (int)$_POST['toggle_id'];
-        $st = db()->prepare('UPDATE templates SET active = 1 - active WHERE id = ?');
-        $st->execute([$id]);
-        flash('success', 'Template status updated.');
-        header('Location: templates.php');
+    // 1. Create New Digital Code Template
+    if ($action === 'create_code_template') {
+        $name = trim($_POST['name'] ?? '');
+        $themePreset = trim($_POST['theme_preset'] ?? 'green');
+        $pageSize = trim($_POST['page_size'] ?? 'A4');
+        $presets = get_paper_presets();
+        if (!isset($presets[$pageSize])) $pageSize = 'A4';
+
+        if ($name === '') {
+            flash('error', 'Template name is required.');
+            header('Location: templates.php?tab=all');
+            exit;
+        }
+
+        $paper = $presets[$pageSize];
+        $pageConfigJson = json_encode([
+            'pageSize' => $pageSize,
+            'orientation' => 'portrait',
+            'width' => (float)$paper['width'],
+            'height' => (float)$paper['height'],
+            'unit' => $paper['unit'],
+            'marginTop' => 6.0,
+            'marginRight' => 12.0,
+            'marginBottom' => 6.0,
+            'marginLeft' => 12.0,
+            'created_at' => date('Y-m-d H:i:s')
+        ]);
+
+        $themePresets = get_theme_presets();
+        $themeConfig = $themePresets[$themePreset] ?? $themePresets['green'];
+        $themeConfigJson = json_encode($themeConfig);
+
+        $slug = 'code:' . strtolower(preg_replace('/[^a-z0-9]+/i', '_', $name));
+
+        $st = db()->prepare("
+            INSERT INTO templates (name, file_path, original_name, mime_type, width, height, default_layout_json, active, created_by, template_type, page_size, orientation, page_width, page_height, page_unit, margin_top, margin_right, margin_bottom, margin_left, page_config_json, theme_preset, theme_config_json)
+            VALUES (?, ?, ?, 'text/html', 794, 1123, '{}', 1, ?, 'code', ?, 'portrait', ?, ?, ?, 6.0, 12.0, 6.0, 12.0, ?, ?, ?)
+        ");
+        $st->execute([
+            $name,
+            $slug,
+            $name . ' Code Template',
+            $user['id'],
+            $pageSize,
+            (float)$paper['width'],
+            (float)$paper['height'],
+            $paper['unit'],
+            $pageConfigJson,
+            $themePreset,
+            $themeConfigJson
+        ]);
+
+        $newId = (int)db()->lastInsertId();
+        flash('success', "Digital Code Template '{$name}' created successfully.");
+        header('Location: templates.php?tab=customizer&template_id=' . $newId);
         exit;
     }
 
-    // 2. Set default template
-    if (isset($_POST['set_default_id'])) {
-        $defId = (int)$_POST['set_default_id'];
-        set_setting('default_template_id', (string)$defId);
-        flash('success', 'Default template set successfully.');
-        header('Location: templates.php');
+    // 2. Upload Scanned Image Template
+    if ($action === 'upload_image_template') {
+        $name = trim($_POST['name'] ?? '');
+        $f = $_FILES['template_file'] ?? null;
+        if (!$name || !$f || $f['error'] !== UPLOAD_ERR_OK) {
+            flash('error', 'Template name and image file are required.');
+            header('Location: templates.php?tab=images');
+            exit;
+        }
+        if ($f['size'] > 12 * 1024 * 1024) {
+            flash('error', 'Image file must be under 12 MB.');
+            header('Location: templates.php?tab=images');
+            exit;
+        }
+        $info = @getimagesize($f['tmp_name']);
+        $allowed = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
+        if (!$info || !isset($allowed[$info['mime']])) {
+            flash('error', 'Please upload a valid JPG, PNG, or WEBP image.');
+            header('Location: templates.php?tab=images');
+            exit;
+        }
+
+        $uploadDir = __DIR__ . '/uploads/templates';
+        if (!is_dir($uploadDir)) @mkdir($uploadDir, 0777, true);
+        $fileName = 'tpl_' . bin2hex(random_bytes(10)) . '.' . $allowed[$info['mime']];
+        $targetFile = $uploadDir . '/' . $fileName;
+
+        if (!move_uploaded_file($f['tmp_name'], $targetFile)) {
+            flash('error', 'Failed to save uploaded file.');
+            header('Location: templates.php?tab=images');
+            exit;
+        }
+
+        // Paper configuration
+        $presets = get_paper_presets();
+        $pageSize = trim($_POST['page_size'] ?? 'A4');
+        if (!isset($presets[$pageSize])) $pageSize = 'A4';
+        $orientation = strtolower(trim($_POST['orientation'] ?? 'portrait'));
+        if ($orientation !== 'landscape') $orientation = 'portrait';
+        $unit = 'mm';
+
+        if ($pageSize !== 'Custom' && isset($presets[$pageSize])) {
+            $paperWidth = (float)$presets[$pageSize]['width'];
+            $paperHeight = (float)$presets[$pageSize]['height'];
+        } else {
+            $paperWidth = max(50.0, min(1000.0, (float)($_POST['custom_width'] ?? 210.0)));
+            $paperHeight = max(50.0, min(1500.0, (float)($_POST['custom_height'] ?? 297.0)));
+        }
+
+        $pageConfigJson = json_encode([
+            'pageSize' => $pageSize,
+            'orientation' => $orientation,
+            'width' => $paperWidth,
+            'height' => $paperHeight,
+            'unit' => $unit,
+            'marginTop' => 0.0,
+            'marginRight' => 0.0,
+            'marginBottom' => 0.0,
+            'marginLeft' => 0.0,
+            'created_at' => date('Y-m-d H:i:s')
+        ]);
+
+        $fieldMode = trim($_POST['field_mode'] ?? 'val_only');
+        $showLabel = ($fieldMode === 'label_val');
+        $initialFontSize = max(8, min(24, (int)($_POST['font_size'] ?? 11)));
+
+        // Pre-configure initial layout coordinates cleanly over typical prescription header band
+        $defaultLayout = [];
+        $i = 0;
+        foreach (FIELD_DEFS as $k => $label) {
+            $defaultLayout[$k] = [
+                'x' => 6.0 + ($i % 2) * 48.0,
+                'y' => 12.0 + floor($i / 2) * 4.2,
+                'fontSize' => $initialFontSize,
+                'width' => 220,
+                'fontWeight' => '600',
+                'align' => 'left',
+                'color' => '#111827',
+                'showLabel' => $showLabel,
+                'visible' => true
+            ];
+            $i++;
+        }
+
+        ensure_template_page_columns();
+
+        $st = db()->prepare("
+            INSERT INTO templates (
+                name, file_path, original_name, mime_type, width, height, 
+                default_layout_json, active, created_by, template_type,
+                page_size, orientation, page_width, page_height, page_unit,
+                margin_top, margin_right, margin_bottom, margin_left, page_config_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, 'image', ?, ?, ?, ?, ?, 0.0, 0.0, 0.0, 0.0, ?)
+        ");
+        $st->execute([
+            $name,
+            'uploads/templates/' . $fileName,
+            $f['name'],
+            $info['mime'],
+            $info[0],
+            $info[1],
+            json_encode($defaultLayout, JSON_UNESCAPED_UNICODE),
+            $user['id'],
+            $pageSize,
+            $orientation,
+            $paperWidth,
+            $paperHeight,
+            $unit,
+            $pageConfigJson
+        ]);
+
+        $newImgId = (int)db()->lastInsertId();
+        flash('success', "Pre-Printed Pad Template '{$name}' created ({$pageSize}, {$orientation}). Open Layout Editor to fine-tune field positions.");
+        header('Location: template_editor.php?template_id=' . $newImgId);
         exit;
     }
 
-    // 3. Save Code Template settings
+    // 3. Save Code Template Settings & Universal Parameters
     if (isset($_POST['save_code_template'])) {
         $defs = get_motherland_defaults();
         $configData = [];
@@ -40,7 +205,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             }
         }
 
-        // Opacity normalization: if submitted as percentage (e.g. 6 or 10), convert to decimal (0.06 or 0.10)
+        // Opacity normalization
         if (isset($configData['watermark_opacity'])) {
             $opVal = (float)$configData['watermark_opacity'];
             if ($opVal > 1.0) {
@@ -48,11 +213,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             }
         }
 
-        // Explicitly handle all checkbox toggles (unchecked checkboxes are not sent in POST)
+        // Explicitly handle all checkbox toggles
         $checkboxKeys = [
             'show_watermark', 'enable_two_pages', 'show_header', 'show_title',
             'show_patient_info', 'show_doctor_box', 'show_vitals', 'show_validity_note', 'show_footer',
-            'show_divider_lines',
+            'show_divider_lines', 'show_signature_box',
             'show_uhid', 'show_name', 'show_age_sex', 'show_guardian', 'show_contact', 'show_address',
             'show_bill', 'show_date', 'show_panel', 'show_dept', 'show_room', 'show_app',
             'show_vital_height', 'show_vital_weight', 'show_vital_temp', 'show_vital_pulse',
@@ -62,7 +227,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $configData[$ck] = isset($_POST[$ck]) ? '1' : '0';
         }
 
-        // Handle custom icon upload if provided
+        // Custom icon upload
         if (!empty($_FILES['custom_icon']['name']) && $_FILES['custom_icon']['error'] === UPLOAD_ERR_OK) {
             $f = $_FILES['custom_icon'];
             if ($f['size'] <= 5 * 1024 * 1024) {
@@ -82,7 +247,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $configData['icon_path'] = 'assets/motherland-icon.png';
         }
 
+        $targetTplId = (int)($_POST['template_id'] ?? 0);
         save_motherland_config($configData);
+
+        if ($targetTplId > 0) {
+            $tplJson = json_encode(['code_config' => $configData], JSON_UNESCAPED_UNICODE);
+            $st = db()->prepare('UPDATE templates SET default_layout_json = ? WHERE id = ?');
+            $st->execute([$tplJson, $targetTplId]);
+        }
 
         // Save Universal Page Settings
         if (isset($_POST['page_size'])) {
@@ -123,7 +295,6 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             ]);
 
             ensure_template_page_columns();
-            $targetTplId = (int)($_POST['template_id'] ?? 0);
             if ($targetTplId > 0) {
                 $upSt = db()->prepare('UPDATE templates SET 
                     page_size = ?, orientation = ?, page_width = ?, page_height = ?, page_unit = ?,
@@ -153,1163 +324,2604 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                 'watermarkOpacity' => !empty($_POST['theme_wm_opacity']) ? round((float)$_POST['theme_wm_opacity'] / 100, 2) : 0.08
             ];
             $themeConfigJson = json_encode($customTheme);
-            $targetTplId = (int)($_POST['template_id'] ?? 0);
             if ($targetTplId > 0) {
                 $upTh = db()->prepare('UPDATE templates SET theme_preset = ?, theme_config_json = ? WHERE id = ?');
                 $upTh->execute([$themePreset, $themeConfigJson, $targetTplId]);
             }
         }
 
-        flash('success', 'Motherland template settings and color theme saved successfully.');
-        header('Location: templates.php');
+        flash('success', 'Template settings, branding, page sizes and color themes saved successfully.');
+        header('Location: templates.php?tab=customizer&template_id=' . $targetTplId);
         exit;
     }
 
-    // 4. Existing Upload Image Template form (preserved 100%)
-    $name = trim($_POST['name'] ?? '');
-    $f = $_FILES['template_file'] ?? null;
-    if (!$name || !$f || $f['error'] !== UPLOAD_ERR_OK) {
-        flash('error', 'Name and image file are required.');
-        header('Location: templates.php');
+    // 4. Toggle Active / Blocked Status
+    if (isset($_POST['toggle_id'])) {
+        $id = (int)$_POST['toggle_id'];
+        $st = db()->prepare('UPDATE templates SET active = 1 - active WHERE id = ?');
+        $st->execute([$id]);
+        flash('success', 'Template status updated.');
+        header('Location: templates.php?tab=' . urlencode($activeTab));
         exit;
     }
-    if ($f['size'] > 8 * 1024 * 1024) {
-        flash('error', 'Template must be under 8 MB.');
-        header('Location: templates.php');
+
+    // 5. Set Default Template
+    if (isset($_POST['set_default_id'])) {
+        $defId = (int)$_POST['set_default_id'];
+        set_setting('default_template_id', (string)$defId);
+        flash('success', 'Default OPD template updated successfully.');
+        header('Location: templates.php?tab=' . urlencode($activeTab));
         exit;
     }
-    $info = @getimagesize($f['tmp_name']);
-    $allowed = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
-    if (!$info || !isset($allowed[$info['mime']])) {
-        flash('error', 'Use JPG, PNG or WEBP template images.');
-        header('Location: templates.php');
+
+    // 6. Delete Template
+    if ($action === 'delete_template') {
+        $delId = (int)($_POST['id'] ?? 0);
+        if ($delId > 0) {
+            $defId = (int)setting('default_template_id', '0');
+            if ($delId === $defId) {
+                flash('error', 'Cannot delete the template currently set as Default. Set another template as default first.');
+                header('Location: templates.php?tab=' . urlencode($activeTab));
+                exit;
+            }
+
+            $st = db()->prepare('SELECT file_path, template_type FROM templates WHERE id = ?');
+            $st->execute([$delId]);
+            $tplToDelete = $st->fetch();
+
+            if ($tplToDelete) {
+                if ($tplToDelete['template_type'] === 'image' && !empty($tplToDelete['file_path'])) {
+                    $imgFullPath = __DIR__ . '/' . ltrim($tplToDelete['file_path'], '/');
+                    if (file_exists($imgFullPath) && strpos($tplToDelete['file_path'], 'sample-opd-template') === false) {
+                        @unlink($imgFullPath);
+                    }
+                }
+                db()->prepare('DELETE FROM template_layouts WHERE template_id = ?')->execute([$delId]);
+                db()->prepare('DELETE FROM templates WHERE id = ?')->execute([$delId]);
+                flash('success', 'Template deleted successfully.');
+            }
+        }
+        header('Location: templates.php?tab=' . urlencode($activeTab));
         exit;
     }
-    $file = 'uploads/templates/' . bin2hex(random_bytes(12)) . '.' . $allowed[$info['mime']];
-    if (!move_uploaded_file($f['tmp_name'], __DIR__ . '/' . $file)) {
-        flash('error', 'Upload failed.');
-        header('Location: templates.php');
-        exit;
-    }
-    $default = [];
-    $i = 0;
-    foreach (FIELD_DEFS as $k => $label) {
-        $default[$k] = ['x' => 7 + ($i % 2) * 48, 'y' => 10 + floor($i / 2) * 5, 'fontSize' => 12, 'width' => 210, 'fontWeight' => '500'];
-        $i++;
-    }
-    $st = db()->prepare('INSERT INTO templates(name,file_path,original_name,mime_type,width,height,default_layout_json,template_type,created_by) VALUES(?,?,?,?,?,?,?,?,?)');
-    $st->execute([$name, $file, $f['name'], $info['mime'], $info[0], $info[1], json_encode($default), 'image', $user['id']]);
-    flash('success', 'Template uploaded. Open Layout Editor to position fields.');
-    header('Location: templates.php');
-    exit;
 }
 
 // Fetch templates
 $allTemplates = db()->query('SELECT t.*, u.name creator FROM templates t LEFT JOIN users u ON u.id = t.created_by ORDER BY t.id DESC')->fetchAll();
-
-$codeTemplates = array_filter($allTemplates, fn($t) => is_code_template($t));
-$imageTemplates = array_filter($allTemplates, fn($t) => !is_code_template($t));
+$codeTemplates = array_values(array_filter($allTemplates, fn($t) => is_code_template($t)));
+$imageTemplates = array_values(array_filter($allTemplates, fn($t) => !is_code_template($t)));
 $defaultTemplateId = (int)setting('default_template_id', '0');
 
-$cfg = get_motherland_config();
-$motherlandTpl = reset($codeTemplates) ?: null;
-$pageConfig = $motherlandTpl ? get_template_page_config($motherlandTpl) : null;
+// Determine selected Code Template for customizer tab
+$selectedTplId = (int)($_GET['template_id'] ?? 0);
+$selectedCodeTpl = null;
+if ($selectedTplId > 0) {
+    foreach ($codeTemplates as $ct) {
+        if ((int)$ct['id'] === $selectedTplId) {
+            $selectedCodeTpl = $ct;
+            break;
+        }
+    }
+}
+if (!$selectedCodeTpl && !empty($codeTemplates)) {
+    foreach ($codeTemplates as $ct) {
+        if ((int)$ct['id'] === $defaultTemplateId) {
+            $selectedCodeTpl = $ct;
+            break;
+        }
+    }
+    if (!$selectedCodeTpl) {
+        $selectedCodeTpl = $codeTemplates[0];
+    }
+}
+
+$cfg = get_motherland_config($selectedCodeTpl);
+$pageConfig = $selectedCodeTpl ? get_template_page_config($selectedCodeTpl) : null;
 $paperPresets = get_paper_presets();
 $themePresets = get_theme_presets();
-$tplTheme = $motherlandTpl ? get_template_theme($motherlandTpl) : $themePresets['green'];
-$activeThemeKey = strtolower(trim((string)($motherlandTpl['theme_preset'] ?? 'green')));
-$defaultPrintPages = $cfg['default_print_pages'] ?? '1';
+$tplTheme = $selectedCodeTpl ? get_template_theme($selectedCodeTpl) : $themePresets['green'];
+$activeThemeKey = strtolower(trim((string)($selectedCodeTpl['theme_preset'] ?? 'green')));
+if (!isset($themePresets[$activeThemeKey])) $activeThemeKey = 'green';
+$defaultPrintPages = (string)($cfg['default_print_pages'] ?? '1');
 
 require_once __DIR__ . '/includes/header.php';
 ?>
 
-<div class="page-title">
-    <div>
-        <h2>OPD Templates Management</h2>
-        <p>Manage code-based vector templates or upload scanned image templates with drag-and-drop field placement.</p>
-    </div>
-</div>
-
-<!-- ========================================================= -->
-<!-- 1. DEDICATED SECTION: CODE-BASED TEMPLATES (SEPARATE)    -->
-<!-- ========================================================= -->
-<?php
-$wmOpacityVal = (float)($cfg['watermark_opacity'] ?? 0.06);
-$wmOpacityPct = (int)round($wmOpacityVal <= 1.0 ? $wmOpacityVal * 100 : $wmOpacityVal);
-$wmSizeVal = (int)($cfg['watermark_size'] ?? 105);
-if ($wmSizeVal < 40) $wmSizeVal = 105;
-$accentHeightVal = (int)($cfg['accent_height'] ?? 28);
-if ($accentHeightVal < 15) $accentHeightVal = 28;
-$defaultPrintPages = (string)($cfg['default_print_pages'] ?? '1');
-?>
-
 <style>
-/* Scoped Styling for OPD Code Template Management */
-.code-template-section {
-    margin-bottom: 28px;
-    border: 2px solid #bce8cf;
-    background: #fafdfc;
-    border-radius: 5px;
-    padding: 24px;
-    box-shadow: 0 10px 32px rgba(18, 53, 43, 0.05);
+/* ==========================================================================
+   PRODUCTION-LEVEL OPD TEMPLATES HUB DESIGN SYSTEM
+   ========================================================================== */
+.tpl-shell {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    max-width: 1400px;
+    margin: 0 auto;
 }
 
-.tpl-header-card {
+/* Master Header Card */
+.tpl-nav-banner {
     background: #ffffff;
-    border: 1px solid #d8ede3;
-    border-radius: 5px;
-    padding: 20px;
-    margin-bottom: 24px;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 16px 20px;
+    box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
     display: flex;
     align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
-    gap: 18px;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.02);
+    gap: 16px;
 }
 
-.tpl-card {
+/* Tab Segmented Switcher */
+.tpl-seg-nav {
+    display: inline-flex;
+    background: #f1f5f9;
+    padding: 4px;
+    border-radius: 10px;
+    gap: 4px;
+}
+
+.tpl-seg-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #64748b;
+    text-decoration: none;
+    transition: all 0.18s ease;
+}
+
+.tpl-seg-item:hover {
+    color: #0f172a;
+    background: rgba(255, 255, 255, 0.7);
+}
+
+.tpl-seg-item.is-active {
     background: #ffffff;
-    border: 1px solid #dcece5;
-    border-radius: 5px;
-    padding: 22px;
-    margin-bottom: 20px;
-    box-shadow: 0 4px 18px rgba(18, 53, 43, 0.03);
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    color: var(--primary);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+    font-weight: 700;
 }
 
-.tpl-card-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 18px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid #edf5f1;
-}
-
-.tpl-card-title {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 16px;
-    font-weight: 800;
-    color: #0c3e2e;
-    margin: 0;
-}
-
-.tpl-badge-num {
+.tpl-pill-count {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 26px;
-    height: 26px;
-    border-radius: 3px;
-    background: #e4f7ee;
-    color: #12794c;
-    font-size: 13px;
-    font-weight: 800;
-}
-
-.tpl-badge-pill {
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 10px;
     font-size: 11px;
-    font-weight: 800;
-    padding: 4px 10px;
-    border-radius: 3px;
-    letter-spacing: 0.3px;
+    font-weight: 700;
+    background: #e2e8f0;
+    color: #475569;
 }
 
-/* Custom Styled Toggle Switches */
-.switch-label {
+.tpl-seg-item.is-active .tpl-pill-count {
+    background: var(--primary-light);
+    color: var(--primary);
+}
+
+/* Top Creation Actions */
+.tpl-top-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.btn-tpl-create {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 18px;
+    border-radius: 8px;
+    font-size: 13.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: none;
+    text-decoration: none;
+}
+
+.btn-tpl-create.primary {
+    background: linear-gradient(135deg, #087F6C 0%, #066757 100%);
+    color: #ffffff;
+    box-shadow: 0 3px 10px rgba(8, 127, 108, 0.25);
+}
+
+.btn-tpl-create.primary:hover {
+    background: linear-gradient(135deg, #077160 0%, #055447 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 5px 14px rgba(8, 127, 108, 0.35);
+}
+
+.btn-tpl-create.secondary {
+    background: #f8fafc;
+    color: #334155;
+    border: 1.5px solid #cbd5e1;
+}
+
+.btn-tpl-create.secondary:hover {
+    background: #ffffff;
+    border-color: #94a3b8;
+    color: #0f172a;
+    transform: translateY(-1px);
+}
+
+/* Subheader / Template Context Bar */
+.tpl-context-bar {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 14px 20px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background: #f7fcfa;
-    border: 1px solid #e1eee8;
-    border-radius: 4px;
-    padding: 12px 14px;
-    cursor: pointer;
-    user-select: none;
-    transition: all 0.15s ease;
-}
-
-.switch-label:hover {
-    background: #eef8f4;
-    border-color: #bce3d2;
-}
-
-.switch-label input[type="checkbox"] {
-    width: 20px;
-    height: 20px;
-    accent-color: #18a96a;
-    cursor: pointer;
-}
-
-/* Radio Cards for 1-Page vs 2-Page */
-.page-mode-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    flex-wrap: wrap;
     gap: 14px;
+    box-shadow: 0 1px 4px rgba(15, 23, 42, 0.03);
 }
 
-.page-mode-card {
+.tpl-context-left {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: 12px;
-    background: #fbfdfc;
-    border: 2px solid #dcece5;
-    border-radius: 4px;
-    padding: 16px;
-    cursor: pointer;
+    flex-wrap: wrap;
+}
+
+.tpl-active-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    background: #e6f5f2;
+    color: #087f6c;
+}
+
+.tpl-context-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+/* ==========================================================================
+   PRODUCTION SaaS CARDS (CUSTOMIZER)
+   ========================================================================== */
+.prod-card-group {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+}
+
+.prod-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 4px 18px -2px rgba(15, 23, 42, 0.04);
     transition: all 0.2s ease;
 }
 
-.page-mode-card:hover {
-    border-color: #18a96a;
-    background: #f3fbf7;
+.prod-card:hover {
+    border-color: #cbd5e1;
+    box-shadow: 0 8px 26px -4px rgba(15, 23, 42, 0.07);
 }
 
-.page-mode-card input[type="radio"]:checked + .page-mode-content {
-    color: #0c3e2e;
+.prod-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid #f1f5f9;
+    margin-bottom: 22px;
 }
 
-.page-mode-card.is-selected {
-    border-color: #18a96a;
-    background: #eef9f4;
-    box-shadow: 0 4px 14px rgba(24, 169, 106, 0.12);
-}
-
-.input-num-group {
+.prod-card-title-wrap {
     display: flex;
     align-items: center;
-    background: #fff;
-    border: 1px solid #cce2d8;
-    border-radius: 4px;
-    overflow: hidden;
+    gap: 14px;
 }
 
-.input-num-group input[type="number"] {
-    border: 0;
-    padding: 10px 12px;
+.prod-card-icon-box {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.prod-card-icon-box.teal { background: #e6f5f2; color: #087f6c; }
+.prod-card-icon-box.blue { background: #e0f2fe; color: #0284c7; }
+.prod-card-icon-box.purple { background: #f3e8ff; color: #7e22ce; }
+.prod-card-icon-box.amber { background: #fef3c7; color: #b45309; }
+.prod-card-icon-box.sky { background: #e0f2fe; color: #0369a1; }
+.prod-card-icon-box.green { background: #dcfce7; color: #15803d; }
+.prod-card-icon-box.red { background: #fee2e2; color: #b91c1c; }
+.prod-card-icon-box.rose { background: #ffe4e6; color: #e11d48; }
+
+.prod-card-headings h3 {
+    margin: 0;
+    font-size: 16px;
     font-weight: 700;
-    font-size: 15px;
-    color: #11382b;
+    color: #0f172a;
+    line-height: 1.3;
+}
+
+.prod-card-headings p {
+    margin: 4px 0 0;
+    font-size: 12.5px;
+    color: #64748b;
+}
+
+.prod-badge-tag {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    text-transform: uppercase;
+    flex-shrink: 0;
+}
+
+/* Modern Form Field Styles */
+.prod-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 18px;
+}
+
+.prod-grid.cols-3 {
+    grid-template-columns: repeat(3, 1fr);
+}
+
+.prod-grid.cols-4 {
+    grid-template-columns: repeat(4, 1fr);
+}
+
+.prod-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.prod-field.span-2 {
+    grid-column: 1 / -1;
+}
+
+.prod-label {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #334155;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.prod-input, .prod-select, .prod-textarea {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 8px;
+    font-size: 13.5px;
+    font-family: inherit;
+    color: #0f172a;
+    background: #ffffff;
+    transition: all 0.2s ease;
+    box-sizing: border-box;
+}
+
+.prod-input:focus, .prod-select:focus, .prod-textarea:focus {
+    border-color: #087f6c;
+    box-shadow: 0 0 0 3px rgba(8, 127, 108, 0.12);
     outline: none;
 }
 
-.input-num-group .unit-tag {
-    padding: 0 12px;
-    background: #f0f7f4;
-    color: #436b5e;
-    font-weight: 700;
-    font-size: 13px;
-    border-left: 1px solid #dceee7;
-    height: 100%;
-    display: flex;
-    align-items: center;
+.prod-input::placeholder, .prod-textarea::placeholder {
+    color: #94a3b8;
 }
 
-.slider-sync-wrap {
+/* Modern Logo Upload Zone */
+.prod-logo-uploader {
+    background: #f8fafc;
+    border: 1.5px dashed #cbd5e1;
+    border-radius: 10px;
+    padding: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
+    transition: border-color 0.2s;
+}
+
+.prod-logo-uploader:hover {
+    border-color: #087f6c;
+}
+
+.prod-logo-preview-col {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.prod-logo-box {
+    width: 60px;
+    height: 60px;
+    background: #ffffff;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+
+.prod-logo-box img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.prod-logo-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.btn-upload-file {
+    position: relative;
+    overflow: hidden;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    background: #ffffff;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #334155;
+    cursor: pointer;
+    transition: all 0.18s ease;
+}
+
+.btn-upload-file:hover {
+    background: #f1f5f9;
+    border-color: #94a3b8;
+    color: #0f172a;
+}
+
+.btn-upload-file input[type="file"] {
+    position: absolute;
+    left: 0;
+    top: 0;
+    opacity: 0;
+    cursor: pointer;
+    width: 100%;
+    height: 100%;
+}
+
+/* Interactive iOS Switch */
+.ios-toggle-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 12px 16px;
+    cursor: pointer;
+    transition: all 0.18s ease;
+}
+
+.ios-toggle-wrap:hover {
+    background: #f1f5f9;
+}
+
+.ios-toggle-left {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.ios-toggle-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #0f172a;
+}
+
+.ios-toggle-desc {
+    font-size: 11.5px;
+    color: #64748b;
+}
+
+.ios-switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    flex-shrink: 0;
+}
+
+.ios-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.ios-slider {
+    position: absolute;
+    cursor: pointer;
+    inset: 0;
+    background-color: #cbd5e1;
+    transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    border-radius: 24px;
+}
+
+.ios-slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    border-radius: 50%;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.ios-switch input:checked + .ios-slider {
+    background-color: #087f6c;
+}
+
+.ios-switch input:checked + .ios-slider:before {
+    transform: translateX(20px);
+}
+
+/* Visual Theme Preset Cards */
+.theme-swatch-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 18px;
+}
+
+.theme-swatch-card {
+    border: 2px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 12px;
+    cursor: pointer;
+    background: #ffffff;
+    transition: all 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.theme-swatch-card:hover {
+    border-color: #cbd5e1;
+    transform: translateY(-1px);
+}
+
+.theme-swatch-card.is-active {
+    border-color: #087f6c;
+    background: #f7fdfb;
+    box-shadow: 0 4px 12px rgba(8, 127, 108, 0.12);
+}
+
+.theme-swatch-dots {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.swatch-circle {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.theme-swatch-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: #0f172a;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+/* Custom Hex Pickers Container */
+.color-picker-box {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 14px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 16px;
+}
+
+.color-picker-item {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.color-picker-item span {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: #475569;
+}
+
+.color-input-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #ffffff;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 6px;
+    padding: 3px 8px;
+}
+
+.color-input-wrap input[type="color"] {
+    -webkit-appearance: none;
+    border: none;
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    cursor: pointer;
+    background: none;
+    padding: 0;
+}
+
+.color-input-wrap input[type="color"]::-webkit-color-swatch-wrapper {
+    padding: 0;
+}
+
+.color-input-wrap input[type="color"]::-webkit-color-swatch {
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+}
+
+.color-input-wrap input[type="text"] {
+    border: none;
+    font-size: 12px;
+    font-family: monospace;
+    font-weight: 600;
+    color: #0f172a;
+    width: 100%;
+    outline: none;
+    background: transparent;
+}
+
+/* Print Mode Big Cards */
+.print-mode-cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.print-mode-opt {
+    border: 2px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 18px 20px;
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    cursor: pointer;
+    background: #ffffff;
+    transition: all 0.2s ease;
+    position: relative;
+}
+
+.print-mode-opt:hover {
+    border-color: #cbd5e1;
+    background: #fbfdfe;
+}
+
+.print-mode-opt.is-selected {
+    border-color: #087f6c;
+    background: #f4fbf9;
+    box-shadow: 0 4px 14px rgba(8, 127, 108, 0.1);
+}
+
+.print-mode-opt input[type="radio"] {
+    margin-top: 3px;
+    width: 18px;
+    height: 18px;
+    accent-color: #087f6c;
+}
+
+.print-mode-desc strong {
+    display: block;
+    font-size: 14.5px;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 4px;
+}
+
+.print-mode-desc p {
+    margin: 0;
+    font-size: 12px;
+    color: #64748b;
+    line-height: 1.45;
+}
+
+/* Margin Controller Box */
+.margin-control-panel {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 18px;
+}
+
+.margin-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+}
+
+.margin-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.margin-item label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #475569;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.margin-item input {
+    padding: 8px 12px;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #0f172a;
+    width: 100%;
+}
+
+/* Demographic Micro-Cards */
+.field-toggle-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 12px;
+}
+
+.field-micro-card {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    transition: all 0.16s ease;
+}
+
+.field-micro-card:hover {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+}
+
+.field-micro-card .input-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.field-micro-card .input-col span {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #475569;
+}
+
+.field-micro-card input[type="text"] {
+    padding: 6px 10px;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: 12.5px;
+    background: #ffffff;
+    width: 100%;
+}
+
+/* Vitals Micro-Cards */
+.vital-micro-card {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.vital-micro-card .param-name {
+    width: 100px;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.vital-micro-card .param-label-in {
+    flex: 1;
+}
+
+.vital-micro-card .param-unit-in {
+    width: 70px;
+}
+
+/* Range Slider Synchronization */
+.slider-container {
     display: flex;
     align-items: center;
     gap: 14px;
     margin-top: 6px;
 }
 
-.slider-sync-wrap input[type="range"] {
+.slider-container input[type="range"] {
     flex: 1;
     height: 6px;
-    accent-color: #18a96a;
+    accent-color: #087f6c;
     cursor: pointer;
 }
 
-.sticky-action-bar {
+.slider-badge-val {
+    min-width: 46px;
+    text-align: center;
+    padding: 4px 8px;
+    background: #e6f5f2;
+    color: #087f6c;
+    border-radius: 6px;
+    font-size: 12.5px;
+    font-weight: 700;
+}
+
+/* Preset Quick Badges */
+.quick-preset-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 6px;
+}
+
+.badge-preset-btn {
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: #475569;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.badge-preset-btn:hover {
+    background: #e2e8f0;
+    color: #0f172a;
+    border-color: #cbd5e1;
+}
+
+/* ==========================================================================
+   FLOATING GLASSMORPHIC BOTTOM DOCK
+   ========================================================================== */
+.sticky-dock-bar {
     position: sticky;
     bottom: 16px;
-    z-index: 10;
-    background: #ffffff;
-    border: 2px solid #bce8cf;
-    border-radius: 5px;
-    padding: 14px 20px;
-    box-shadow: 0 12px 36px rgba(12, 53, 38, 0.18);
+    z-index: 100;
+    background: rgba(255, 255, 255, 0.94);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1.5px solid rgba(8, 127, 108, 0.25);
+    border-radius: 12px;
+    padding: 14px 22px;
+    box-shadow: 0 12px 32px -4px rgba(7, 63, 56, 0.18);
     display: flex;
     align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
+    gap: 14px;
+    margin-top: 28px;
+}
+
+.dock-left-actions {
+    display: flex;
+    align-items: center;
     gap: 12px;
-    margin-top: 24px;
+    flex-wrap: wrap;
 }
 
-.code-template-section .form-grid {
+.dock-right-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.btn-dock-save {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: linear-gradient(135deg, #087F6C 0%, #066757 100%);
+    color: #ffffff;
+    border: none;
+    padding: 11px 26px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(8, 127, 108, 0.3);
+    transition: all 0.2s ease;
+}
+
+.btn-dock-save:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(8, 127, 108, 0.4);
+}
+
+.btn-dock-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 16px;
+    background: #ffffff;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #334155;
+    text-decoration: none;
+    transition: all 0.18s ease;
+}
+
+.btn-dock-link:hover {
+    background: #f8fafc;
+    border-color: #94a3b8;
+    color: #0f172a;
+    transform: translateY(-1px);
+}
+
+.btn-dock-link.preview {
+    background: #f0fdf4;
+    border-color: #bbf7d0;
+    color: #15803d;
+}
+
+.btn-dock-link.preview:hover {
+    background: #dcfce7;
+    border-color: #86efac;
+    color: #14532d;
+}
+
+/* ==========================================================================
+   CARDS IN TAB 1 (ALL TEMPLATES) & TAB 3 (IMAGE SCANS)
+   ========================================================================== */
+.tpl-cards-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    gap: 20px;
+}
+
+.tpl-overview-card {
+    background: #ffffff;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
     gap: 16px;
+    transition: all 0.2s ease;
 }
 
-.code-template-section .span-2 {
-    grid-column: 1 / -1;
+.tpl-overview-card:hover {
+    border-color: #cbd5e1;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.07);
 }
 
-.code-template-section label {
+.tpl-overview-card.is-default {
+    border-color: #087f6c;
+    background: linear-gradient(180deg, #f7fdfb 0%, #ffffff 100%);
+    box-shadow: 0 4px 18px rgba(8, 127, 108, 0.1);
+}
+
+.tpl-overview-card.is-inactive {
+    opacity: 0.72;
+    background: #fafafa;
+}
+
+.card-top-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+}
+
+.type-indicator-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.type-indicator-avatar.code {
+    background: #e6f5f2;
+    color: #087f6c;
+}
+
+.type-indicator-avatar.image {
+    background: #e0f2fe;
+    color: #0284c7;
+}
+
+.card-title-details {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.card-title-details h3 {
+    margin: 0;
+    font-size: 15.5px;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.card-badges-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 2px;
+}
+
+.badge-tag-pill {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+
+.badge-tag-pill.code { background: #e6f5f2; color: #087f6c; }
+.badge-tag-pill.image { background: #e0f2fe; color: #0284c7; }
+.badge-tag-pill.default { background: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
+
+.card-specs-list {
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 10px 14px;
     display: flex;
     flex-direction: column;
     gap: 6px;
-    font-size: 13px;
-    font-weight: 700;
-    color: #204036;
+    font-size: 12px;
+    color: #64748b;
 }
 
-.code-template-section input[type="text"],
-.code-template-section input[type="tel"],
-.code-template-section input[type="email"],
-.code-template-section select,
-.code-template-section textarea {
-    width: 100%;
-    border: 1.5px solid #cce2d8;
-    background: #ffffff;
-    color: #11382b;
+.card-specs-list div {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.card-specs-list strong {
+    color: #1e293b;
+    font-weight: 600;
+}
+
+.card-bottom-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding-top: 12px;
+    border-top: 1px solid #f1f5f9;
+    flex-wrap: wrap;
+}
+
+.action-btn-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 12px;
     border-radius: 6px;
-    padding: 10px 12px;
-    font-size: 13.5px;
-    box-sizing: border-box;
-    font-family: inherit;
-    outline: none;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    font-size: 12px;
+    font-weight: 600;
+    background: #f1f5f9;
+    color: #334155;
+    border: 1px solid #e2e8f0;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.15s ease;
 }
 
-.code-template-section input:focus,
-.code-template-section select:focus,
-.code-template-section textarea:focus {
-    border-color: #18a96a;
-    box-shadow: 0 0 0 3px rgba(24, 169, 106, 0.12);
+.action-btn-pill:hover {
+    background: #e2e8f0;
+    color: #0f172a;
 }
 
-@media (max-width: 800px) {
-    .code-template-section .form-grid,
-    .page-mode-grid {
-        grid-template-columns: 1fr;
-    }
+.action-btn-pill.primary {
+    background: #e6f5f2;
+    color: #087f6c;
+    border-color: #b2dfdb;
+    font-weight: 700;
+}
+
+.action-btn-pill.primary:hover {
+    background: #087f6c;
+    color: #ffffff;
+    border-color: #087f6c;
+}
+
+.action-btn-pill.danger:hover {
+    background: #fee2e2;
+    color: #dc2626;
+    border-color: #fca5a5;
+}
+
+/* Modals */
+.tpl-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.65);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 999;
+    padding: 16px;
+}
+
+.tpl-modal-box {
+    background: #ffffff;
+    border-radius: 12px;
+    width: 100%;
+    max-width: 520px;
+    box-shadow: 0 20px 45px rgba(0, 0, 0, 0.2);
+    overflow: hidden;
+    animation: modalPopIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modalPopIn {
+    0% { opacity: 0; transform: scale(0.96) translateY(8px); }
+    100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.tpl-modal-header {
+    background: linear-gradient(135deg, #073F38 0%, #087F6C 100%);
+    color: #ffffff;
+    padding: 16px 22px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.tpl-modal-header h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+}
+
+.btn-modal-close-icon {
+    background: transparent;
+    border: none;
+    color: #ffffff;
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.85;
+}
+
+.btn-modal-close-icon:hover {
+    opacity: 1;
+}
+
+.tpl-modal-body {
+    padding: 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.tpl-modal-footer {
+    padding: 14px 22px;
+    background: #f8fafc;
+    border-top: 1px solid #e2e8f0;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
 }
 </style>
 
-<section class="card code-template-section">
-    <div class="card-head" style="margin-bottom: 20px;">
-        <div>
-            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 4px;">
-                <h2 style="margin: 0; color: #0d4a34;">Motherland OPD Code Template (HTML & CSS)</h2>
-                <span style="background: #18a96a; color: #fff; font-size: 11px; font-weight: 800; padding: 3px 9px; border-radius: 6px; letter-spacing: 0.5px;">ACTIVE</span>
-            </div>
-            <p>Vector typographic template with zero overlapping text, customizable watermark, 2-page continuation sheet support, and independent section hide/show toggles.</p>
+<div class="tpl-shell">
+    <!-- MASTER TOP NAVIGATION & CREATION ACTION BAR -->
+    <div class="tpl-nav-banner">
+        <div class="tpl-seg-nav">
+            <a href="templates.php?tab=all" class="tpl-seg-item <?= $activeTab === 'all' ? 'is-active' : '' ?>">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect width="7" height="7" x="3" y="3" rx="1"></rect>
+                    <rect width="7" height="7" x="14" y="3" rx="1"></rect>
+                    <rect width="7" height="7" x="14" y="14" rx="1"></rect>
+                    <rect width="7" height="7" x="3" y="14" rx="1"></rect>
+                </svg>
+                <span>All Templates</span>
+                <span class="tpl-pill-count"><?= count($allTemplates) ?></span>
+            </a>
+            <a href="templates.php?tab=customizer" class="tpl-seg-item <?= $activeTab === 'customizer' ? 'is-active' : '' ?>">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                </svg>
+                <span>Digital Code Designer</span>
+                <span class="tpl-pill-count"><?= count($codeTemplates) ?></span>
+            </a>
+            <a href="templates.php?tab=images" class="tpl-seg-item <?= $activeTab === 'images' ? 'is-active' : '' ?>">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect width="18" height="18" x="3" y="3" rx="2" ry="2"></rect>
+                    <circle cx="9" cy="9" r="2"></circle>
+                    <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path>
+                </svg>
+                <span>Pre-Printed Image Scans</span>
+                <span class="tpl-pill-count"><?= count($imageTemplates) ?></span>
+            </a>
         </div>
-        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-            <?php if ($motherlandTpl): ?>
-                <a class="btn btn-soft" href="print_opd.php?template_id=<?= $motherlandTpl['id'] ?>&pages=1">Preview 1-Page</a>
-                <a class="btn btn-soft" href="print_opd.php?template_id=<?= $motherlandTpl['id'] ?>&pages=2">Preview 2-Pages</a>
-                <a class="btn btn-soft" href="template_editor.php?template_id=<?= $motherlandTpl['id'] ?>">Visual Drag Editor</a>
-            <?php endif; ?>
+
+        <div class="tpl-top-actions">
+            <button type="button" class="btn-tpl-create primary" onclick="openCreateCodeModal()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                <span>Create Digital Template</span>
+            </button>
+            <button type="button" class="btn-tpl-create secondary" onclick="openUploadImageModal()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="17 8 12 3 7 8"></polyline>
+                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+                <span>Upload Scanned Pad</span>
+            </button>
         </div>
     </div>
 
-    <?php if ($motherlandTpl): ?>
-        <!-- Top Status & Actions Card -->
-        <div class="tpl-header-card">
-            <div style="display: flex; align-items: center; gap: 16px;">
-                <div style="width: 54px; height: 54px; border-radius: 4px; background: #e8f8ef; display: grid; place-items: center; border: 1px solid #bce8cf; overflow: hidden; padding: 4px;">
-                    <img src="<?= e($cfg['icon_path']) ?>" alt="Icon" style="max-width: 100%; max-height: 100%; object-fit: contain;">
-                </div>
+    <!-- ===================================================================== -->
+    <!-- TAB 1: ALL TEMPLATES OVERVIEW & CARDS                                 -->
+    <!-- ===================================================================== -->
+    <?php if ($activeTab === 'all'): ?>
+        <!-- TWO TEMPLATE TYPES HERO BANNER -->
+        <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; padding:20px; box-shadow:0 2px 10px rgba(15, 23, 42, 0.04); margin-bottom:20px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
                 <div>
-                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                        <strong style="font-size: 16px; color: #111;"><?= e($motherlandTpl['name']) ?></strong>
-                        <?php if ($defaultTemplateId === (int)$motherlandTpl['id']): ?>
-                            <span style="background: #e1f5fe; color: #0277bd; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 3px;">Current Default</span>
-                        <?php endif; ?>
-                        <span style="background: #e8f8ef; color: #18a96a; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 3px;">A4 Vector Form</span>
-                    </div>
-                    <small style="color: #6a837c; display: block; margin-top: 4px;">
-                        <?= e($cfg['hospital_name']) ?> (<?= e($cfg['hospital_tagline']) ?>) · Doctor: <?= e($cfg['doctor_name']) ?> · <?= $motherlandTpl['active'] ? '<span style="color:#18a96a;font-weight:700;">Active</span>' : '<span style="color:#c62828;font-weight:700;">Blocked</span>' ?>
-                    </small>
-                </div>
-            </div>
-
-            <div style="display: flex; align-items: center; gap: 10px;">
-                <form method="post" style="display: inline;">
-                    <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                    <input type="hidden" name="set_default_id" value="<?= $motherlandTpl['id'] ?>">
-                    <button class="btn btn-soft" <?= $defaultTemplateId === (int)$motherlandTpl['id'] ? 'disabled style="opacity:0.6;"' : '' ?>>
-                        <?= $defaultTemplateId === (int)$motherlandTpl['id'] ? 'Default Template' : 'Set as Default' ?>
-                    </button>
-                </form>
-
-                <form method="post" style="display: inline;">
-                    <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                    <input type="hidden" name="toggle_id" value="<?= $motherlandTpl['id'] ?>">
-                    <button class="mini" style="padding: 10px 14px;">
-                        <?= $motherlandTpl['active'] ? 'Block Template' : 'Unblock Template' ?>
-                    </button>
-                </form>
-            </div>
-        </div>
-
-        <!-- MAIN SETTINGS FORM (ORGANIZED INTO INTUITIVE CARDS) -->
-        <form method="post" enctype="multipart/form-data" id="motherlandConfigForm">
-            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-            <input type="hidden" name="save_code_template" value="1">
-            <input type="hidden" name="template_id" value="<?= $motherlandTpl['id'] ?>">
-
-            <!-- CARD 0: PAPER SIZE & ORIENTATION SETTINGS -->
-            <div class="tpl-card">
-                <div class="tpl-card-head">
-                    <h3 class="tpl-card-title">
-                        <span class="tpl-badge-num">📄</span>
-                        <span>Paper Size & Page Configuration (Universal Print Engine)</span>
+                    <h3 style="margin:0; font-size:16px; font-weight:700; color:#0f172a; display:flex; align-items:center; gap:8px;">
+                        <span>Two Supported OPD Slip Modes</span>
+                        <span style="font-size:11px; font-weight:700; background:#e6f5f2; color:#087f6c; padding:2px 8px; border-radius:4px;">BOTH ACTIVE & READY</span>
                     </h3>
-                    <span class="tpl-badge-pill" style="background:#e8f8ef; color:#18a96a;">
-                        <?= e($pageConfig['label'] ?? 'A4 Portrait') ?>
-                    </span>
+                    <p style="margin:4px 0 0; font-size:13px; color:#64748b;">Aap in dono me se jo bhi template type use karna chahein, reception par direct select karke print kar sakte hain.</p>
                 </div>
-                <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 14px;">
-                    <div>
-                        <label>
-                            Paper Size Preset
-                            <select name="page_size" id="tplPageSizeSelect" style="width:100%;margin-top:4px;" onchange="toggleTplCustomDims(this.value)">
-                                <?php foreach ($paperPresets as $pk => $pv): ?>
-                                    <option value="<?= $pk ?>" <?= ($pageConfig && $pageConfig['pageSize'] === $pk) ? 'selected' : '' ?> data-w="<?= $pv['width'] ?>" data-h="<?= $pv['height'] ?>" data-u="<?= $pv['unit'] ?>">
-                                        <?= $pv['name'] ?> (<?= $pv['desc'] ?>)
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </label>
-                    </div>
-                    <div>
-                        <label>
-                            Orientation
-                            <select name="orientation" id="tplOrientationSelect" style="width:100%;margin-top:4px;">
-                                <option value="portrait" <?= ($pageConfig && $pageConfig['orientation'] === 'portrait') ? 'selected' : '' ?>>↕ Portrait (Vertical)</option>
-                                <option value="landscape" <?= ($pageConfig && $pageConfig['orientation'] === 'landscape') ? 'selected' : '' ?>>↔ Landscape (Horizontal)</option>
-                            </select>
-                        </label>
-                    </div>
-                </div>
-
-                <div id="tplCustomDimsRow" style="display:<?= ($pageConfig && $pageConfig['pageSize'] === 'Custom') ? 'grid' : 'none' ?>; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 14px; background:#f8fafc; padding:12px; border-radius:6px; border:1px solid #e2e8f0;">
-                    <div>
-                        <label>
-                            Custom Width
-                            <input type="number" step="0.1" name="page_width" value="<?= $pageConfig['baseWidth'] ?? 210 ?>">
-                        </label>
-                    </div>
-                    <div>
-                        <label>
-                            Custom Height
-                            <input type="number" step="0.1" name="page_height" value="<?= $pageConfig['baseHeight'] ?? 297 ?>">
-                        </label>
-                    </div>
-                    <div>
-                        <label>
-                            Unit
-                            <select name="page_unit">
-                                <option value="mm" <?= ($pageConfig && $pageConfig['unit'] === 'mm') ? 'selected' : '' ?>>mm (Millimeter)</option>
-                                <option value="cm" <?= ($pageConfig && $pageConfig['unit'] === 'cm') ? 'selected' : '' ?>>cm (Centimeter)</option>
-                                <option value="in" <?= ($pageConfig && $pageConfig['unit'] === 'in') ? 'selected' : '' ?>>in (Inch)</option>
-                            </select>
-                        </label>
-                    </div>
-                </div>
-
-                <div>
-                    <label style="font-weight:700; color:#204036; margin-bottom:6px; display:block;">
-                        Page Margins (<?= e($pageConfig['unit'] ?? 'mm') ?>)
-                    </label>
-                    <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
-                        <div>
-                            <label style="font-size:12px;color:#555;">Top</label>
-                            <input type="number" step="0.5" name="margin_top" value="<?= $pageConfig['marginTop'] ?? 6 ?>">
-                        </div>
-                        <div>
-                            <label style="font-size:12px;color:#555;">Right</label>
-                            <input type="number" step="0.5" name="margin_right" value="<?= $pageConfig['marginRight'] ?? 12 ?>">
-                        </div>
-                        <div>
-                            <label style="font-size:12px;color:#555;">Bottom</label>
-                            <input type="number" step="0.5" name="margin_bottom" value="<?= $pageConfig['marginBottom'] ?? 6 ?>">
-                        </div>
-                        <div>
-                            <label style="font-size:12px;color:#555;">Left</label>
-                            <input type="number" step="0.5" name="margin_left" value="<?= $pageConfig['marginLeft'] ?? 12 ?>">
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <script>
-            function toggleTplCustomDims(val) {
-                const row = document.getElementById('tplCustomDimsRow');
-                if (row) row.style.display = (val === 'Custom') ? 'grid' : 'none';
-            }
-            </script>
-
-            <!-- CARD 0.5: COLOR THEME PRESET & PALETTE -->
-            <div class="tpl-card">
-                <div class="tpl-card-head">
-                    <h3 class="tpl-card-title">
-                        <span class="tpl-badge-num">🎨</span>
-                        <span>Healthcare Color Theme (Template Property)</span>
-                    </h3>
-                    <span class="tpl-badge-pill" id="tplThemePill" style="background:#e8f8ef; color:#18a96a; display:inline-flex; align-items:center; gap:6px;">
-                        <span id="tplThemePillDot" style="width:9px; height:9px; border-radius:50%; background:<?= htmlspecialchars($tplTheme['primary']) ?>; display:inline-block;"></span>
-                        <span id="tplThemePillText"><?= e($tplTheme['name']) ?></span>
-                    </span>
-                </div>
-
-                <div style="margin-bottom:16px;">
-                    <label style="font-weight:700; color:#204036; margin-bottom:8px; display:block;">Select Predefined Healthcare Palette</label>
-                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:10px;">
-                        <?php foreach ($themePresets as $pk => $pv): ?>
-                            <label style="display:flex; align-items:center; gap:9px; padding:10px 12px; border:2px solid <?= ($activeThemeKey === $pk) ? '#18a96a' : '#dcece5' ?>; border-radius:6px; cursor:pointer; background:<?= ($activeThemeKey === $pk) ? '#eef9f4' : '#fff' ?>;" class="tpl-theme-radio-label">
-                                <input type="radio" name="theme_preset" value="<?= $pk ?>" <?= ($activeThemeKey === $pk) ? 'checked' : '' ?> onchange="updateTplThemePreview('<?= $pk ?>')">
-                                <span style="display:inline-flex; gap:3px; flex-shrink:0;">
-                                    <span style="width:11px; height:11px; border-radius:50%; background:<?= $pv['primary'] ?>;"></span>
-                                    <span style="width:11px; height:11px; border-radius:50%; background:<?= $pv['accent'] ?>;"></span>
-                                </span>
-                                <span style="font-size:12px; font-weight:600; color:#1f2937;"><?= $pv['name'] ?></span>
-                            </label>
-                        <?php endforeach; ?>
-                    </div>
-                </div>
-
-                <div id="tplCustomColorsSection" style="background:#f8fafc; padding:14px; border-radius:6px; border:1px solid #e2e8f0;">
-                    <label style="font-weight:700; color:#334155; margin-bottom:8px; display:block;">Fine-Tuned Theme Colors</label>
-                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap:12px;">
-                        <div>
-                            <label style="font-size:11px; color:#555; display:block; margin-bottom:4px;">Primary</label>
-                            <input type="color" name="theme_primary" id="tplColorPrimary" value="<?= htmlspecialchars($tplTheme['primary']) ?>" style="width:100%; height:32px; border:none; padding:0; cursor:pointer; border-radius:4px;">
-                        </div>
-                        <div>
-                            <label style="font-size:11px; color:#555; display:block; margin-bottom:4px;">Secondary</label>
-                            <input type="color" name="theme_secondary" id="tplColorSecondary" value="<?= htmlspecialchars($tplTheme['secondary']) ?>" style="width:100%; height:32px; border:none; padding:0; cursor:pointer; border-radius:4px;">
-                        </div>
-                        <div>
-                            <label style="font-size:11px; color:#555; display:block; margin-bottom:4px;">Accent</label>
-                            <input type="color" name="theme_accent" id="tplColorAccent" value="<?= htmlspecialchars($tplTheme['accent']) ?>" style="width:100%; height:32px; border:none; padding:0; cursor:pointer; border-radius:4px;">
-                        </div>
-                        <div>
-                            <label style="font-size:11px; color:#555; display:block; margin-bottom:4px;">Border</label>
-                            <input type="color" name="theme_border" id="tplColorBorder" value="<?= htmlspecialchars($tplTheme['border']) ?>" style="width:100%; height:32px; border:none; padding:0; cursor:pointer; border-radius:4px;">
-                        </div>
-                        <div>
-                            <label style="font-size:11px; color:#555; display:block; margin-bottom:4px;">Heading</label>
-                            <input type="color" name="theme_heading" id="tplColorHeading" value="<?= htmlspecialchars($tplTheme['heading']) ?>" style="width:100%; height:32px; border:none; padding:0; cursor:pointer; border-radius:4px;">
-                        </div>
-                        <div>
-                            <label style="font-size:11px; color:#555; display:block; margin-bottom:4px;">Text</label>
-                            <input type="color" name="theme_text" id="tplColorText" value="<?= htmlspecialchars($tplTheme['text']) ?>" style="width:100%; height:32px; border:none; padding:0; cursor:pointer; border-radius:4px;">
-                        </div>
-                        <div>
-                            <label style="font-size:11px; color:#555; display:block; margin-bottom:4px;">Label</label>
-                            <input type="color" name="theme_label" id="tplColorLabel" value="<?= htmlspecialchars($tplTheme['label']) ?>" style="width:100%; height:32px; border:none; padding:0; cursor:pointer; border-radius:4px;">
-                        </div>
-                        <div>
-                            <label style="font-size:11px; color:#555; display:block; margin-bottom:4px;">Icon</label>
-                            <input type="color" name="theme_icon" id="tplColorIcon" value="<?= htmlspecialchars($tplTheme['icon']) ?>" style="width:100%; height:32px; border:none; padding:0; cursor:pointer; border-radius:4px;">
-                        </div>
-                        <div>
-                            <label style="font-size:11px; color:#555; display:block; margin-bottom:4px;">Watermark</label>
-                            <input type="color" name="theme_watermark" id="tplColorWatermark" value="<?= htmlspecialchars($tplTheme['watermark']) ?>" style="width:100%; height:32px; border:none; padding:0; cursor:pointer; border-radius:4px;">
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <script>
-            const tplThemePresets = <?= json_encode($themePresets) ?>;
-            function updateTplThemePreview(key) {
-                const preset = tplThemePresets[key];
-                if (!preset) return;
-                const dot = document.getElementById('tplThemePillDot');
-                const text = document.getElementById('tplThemePillText');
-                if (dot) dot.style.background = preset.primary;
-                if (text) text.textContent = preset.name;
-
-                const map = {
-                    'Primary': preset.primary,
-                    'Secondary': preset.secondary,
-                    'Accent': preset.accent,
-                    'Border': preset.border,
-                    'Heading': preset.heading,
-                    'Text': preset.text,
-                    'Label': preset.label,
-                    'Icon': preset.icon,
-                    'Watermark': preset.watermark
-                };
-                for (const [k, v] of Object.entries(map)) {
-                    const el = document.getElementById('tplColor' + k);
-                    if (el && v) el.value = v;
-                }
-            }
-            </script>
-
-            <!-- CARD 1: PRINT PAGES MODE -->
-            <div class="tpl-card">
-                <div class="tpl-card-head">
-                    <h3 class="tpl-card-title">
-                        <span class="tpl-badge-num">1</span>
-                        <span>Print Pages Mode (Kitne Page Print Hone Chahiye)</span>
-                    </h3>
-                    <span class="tpl-badge-pill" style="background:#e3f2fd; color:#0d47a1;">PAGE COUNT</span>
-                </div>
-                <div class="page-mode-grid">
-                    <label class="page-mode-card <?= $defaultPrintPages === '1' ? 'is-selected' : '' ?>">
-                        <input type="radio" name="default_print_pages" value="1" <?= $defaultPrintPages === '1' ? 'checked' : '' ?> onchange="document.querySelectorAll('.page-mode-card').forEach(el=>el.classList.remove('is-selected')); this.closest('.page-mode-card').classList.add('is-selected');" style="width:18px;height:18px;margin-top:2px;">
-                        <div class="page-mode-content">
-                            <strong style="display: block; font-size: 14px; color: #0c3e2e;">1 Page (Standard OPD Slip)</strong>
-                            <small style="display: block; color: #6a837c; margin-top: 4px; line-height: 1.35;">Prints a complete single-page prescription with header, patient information, clinical vitals, prescription area, validity note, and footer.</small>
-                        </div>
-                    </label>
-
-                    <label class="page-mode-card <?= $defaultPrintPages === '2' ? 'is-selected' : '' ?>">
-                        <input type="radio" name="default_print_pages" value="2" <?= $defaultPrintPages === '2' ? 'checked' : '' ?> onchange="document.querySelectorAll('.page-mode-card').forEach(el=>el.classList.remove('is-selected')); this.closest('.page-mode-card').classList.add('is-selected');" style="width:18px;height:18px;margin-top:2px;">
-                        <div class="page-mode-content">
-                            <strong style="display: block; font-size: 14px; color: #0c3e2e;">2 Pages (Continuation Sheet Mode)</strong>
-                            <small style="display: block; color: #6a837c; margin-top: 4px; line-height: 1.35;">Prints Page 1 (Full OPD Slip) + Page 2 (Continuation sheet with ONLY Header & Footer, without repeating patient details, and a full blank writing area).</small>
-                        </div>
-                    </label>
-                </div>
-            </div>
-
-            <!-- CARD 2: SECTION VISIBILITY (SHOW / HIDE) -->
-            <div class="tpl-card">
-                <div class="tpl-card-head">
-                    <h3 class="tpl-card-title">
-                        <span class="tpl-badge-num">2</span>
-                        <span>Section & Feature Visibility (Show / Hide Toggles)</span>
-                    </h3>
-                    <span class="tpl-badge-pill" style="background:#e8f8ef; color:#18a96a;">8 SECTIONS</span>
-                </div>
-                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px;">
-                    <label class="switch-label">
-                        <span style="font-weight: 700; color: #11382b; font-size: 13.5px;">Header & Logo Block</span>
-                        <input type="checkbox" name="show_header" value="1" <?= !empty($cfg['show_header']) ? 'checked' : '' ?>>
-                    </label>
-                    <label class="switch-label">
-                        <span style="font-weight: 700; color: #11382b; font-size: 13.5px;">Consultation Paper Title</span>
-                        <input type="checkbox" name="show_title" value="1" <?= !empty($cfg['show_title']) ? 'checked' : '' ?>>
-                    </label>
-                    <label class="switch-label">
-                        <span style="font-weight: 700; color: #11382b; font-size: 13.5px;">Patient Details Table</span>
-                        <input type="checkbox" name="show_patient_info" value="1" <?= !empty($cfg['show_patient_info']) ? 'checked' : '' ?>>
-                    </label>
-                    <label class="switch-label">
-                        <span style="font-weight: 700; color: #11382b; font-size: 13.5px;">Doctor Name Banner</span>
-                        <input type="checkbox" name="show_doctor_box" value="1" <?= !empty($cfg['show_doctor_box']) ? 'checked' : '' ?>>
-                    </label>
-                    <label class="switch-label">
-                        <span style="font-weight: 700; color: #11382b; font-size: 13.5px;">Vitals Measurements Box</span>
-                        <input type="checkbox" name="show_vitals" value="1" <?= !empty($cfg['show_vitals']) ? 'checked' : '' ?>>
-                    </label>
-                    <label class="switch-label">
-                        <span style="font-weight: 700; color: #11382b; font-size: 13.5px;">Validity Note Notice</span>
-                        <input type="checkbox" name="show_validity_note" value="1" <?= !empty($cfg['show_validity_note']) ? 'checked' : '' ?>>
-                    </label>
-                    <label class="switch-label">
-                        <span style="font-weight: 700; color: #11382b; font-size: 13.5px;">3-Column Footer Contacts</span>
-                        <input type="checkbox" name="show_footer" value="1" <?= !empty($cfg['show_footer']) ? 'checked' : '' ?>>
-                    </label>
-                    <label class="switch-label">
-                        <span style="font-weight: 700; color: #11382b; font-size: 13.5px;">Hospital Watermark</span>
-                        <input type="checkbox" name="show_watermark" value="1" <?= !empty($cfg['show_watermark']) ? 'checked' : '' ?>>
-                    </label>
-                    <label class="switch-label">
-                        <span style="font-weight: 700; color: #11382b; font-size: 13.5px;">Divider Lines (Borders)</span>
-                        <input type="checkbox" name="show_divider_lines" value="1" <?= !empty($cfg['show_divider_lines']) ? 'checked' : '' ?>>
-                    </label>
-                </div>
-            </div>
-
-            <!-- CARD 3: WATERMARK ENGINE -->
-            <div class="tpl-card">
-                <div class="tpl-card-head">
-                    <h3 class="tpl-card-title">
-                        <span class="tpl-badge-num">3</span>
-                        <span>Premium Watermark Engine (Position, Size & Opacity)</span>
-                    </h3>
-                    <span class="tpl-badge-pill" style="background:#ede7f6; color:#512da8;">WATERMARK CONTROLS</span>
-                </div>
-                <div class="form-grid">
-                    <!-- Position -->
-                    <label>
-                        Watermark Position / Alignment
-                        <select name="watermark_position" style="padding: 9px 12px; border-radius: 4px; border: 1px solid #cce2d8; font-weight: 600;">
-                            <option value="bottom-right" <?= ($cfg['watermark_position'] ?? '') === 'bottom-right' ? 'selected' : '' ?>>Bottom-Right (Niche Right Corner - Authentic)</option>
-                            <option value="center" <?= ($cfg['watermark_position'] ?? '') === 'center' ? 'selected' : '' ?>>Center (Page ke Center mein - Grand Luxury Seal)</option>
-                            <option value="bottom-center" <?= ($cfg['watermark_position'] ?? '') === 'bottom-center' ? 'selected' : '' ?>>Bottom-Center (Niche Center)</option>
-                            <option value="bottom-left" <?= ($cfg['watermark_position'] ?? '') === 'bottom-left' ? 'selected' : '' ?>>Bottom-Left (Niche Left Corner)</option>
-                            <option value="top-right" <?= ($cfg['watermark_position'] ?? '') === 'top-right' ? 'selected' : '' ?>>Top-Right (Upar Right Corner)</option>
+                
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <span style="font-size:12.5px; font-weight:600; color:#475569;">System Default:</span>
+                    <form method="post" action="templates.php?tab=all" style="display:inline;">
+                        <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                        <select name="set_default_id" class="prod-select" style="padding:6px 12px; font-size:13px; font-weight:700; color:#087f6c; width:auto;" onchange="this.form.submit()">
+                            <?php foreach ($allTemplates as $at): 
+                                $isCt = is_code_template($at);
+                            ?>
+                                <option value="<?= $at['id'] ?>" <?= ((int)$at['id'] === $defaultTemplateId) ? 'selected' : '' ?>>
+                                    <?= $isCt ? '🩺 Digital Vector: ' : '🖼️ Uploaded Pad: ' ?><?= e($at['name']) ?><?= ((int)$at['id'] === $defaultTemplateId) ? ' (Default)' : '' ?>
+                                </option>
+                            <?php endforeach; ?>
                         </select>
-                        <small style="color: #6a837c;">Choose where the watermark emblem appears on the consultation sheet.</small>
-                    </label>
-
-                    <!-- Watermark Size (Number + Slider) -->
-                    <label>
-                        Watermark Size (Bada / Chota)
-                        <div class="input-num-group">
-                            <input type="number" name="watermark_size" id="wm_size_input" min="40" max="200" step="1" value="<?= $wmSizeVal ?>">
-                            <span class="unit-tag">mm</span>
-                        </div>
-                        <div class="slider-sync-wrap">
-                            <input type="range" id="wm_size_slider" min="40" max="200" step="1" value="<?= $wmSizeVal ?>">
-                            <span id="wm_size_badge" style="font-weight: 700; font-size: 12px; color: #0d4a34; width: 130px;">
-                                <?= $wmSizeVal ?> mm (<?= $wmSizeVal < 85 ? 'Small' : ($wmSizeVal > 130 ? 'Large' : 'Standard') ?>)
-                            </span>
-                        </div>
-                        <small style="color: #6a837c;">105mm is standard half-page width. 140mm-170mm gives an extra large seal.</small>
-                    </label>
-
-                    <!-- Watermark Opacity (Number + Slider) -->
-                    <label>
-                        Watermark Opacity (Faintness: 2% - 30%)
-                        <div class="input-num-group">
-                            <input type="number" name="watermark_opacity" id="wm_opacity_input" min="2" max="30" step="1" value="<?= $wmOpacityPct ?>">
-                            <span class="unit-tag">%</span>
-                        </div>
-                        <div class="slider-sync-wrap">
-                            <input type="range" id="wm_opacity_slider" min="2" max="30" step="1" value="<?= $wmOpacityPct ?>">
-                            <span id="wm_opacity_badge" style="font-weight: 700; font-size: 12px; color: #0d4a34; width: 60px;"><?= $wmOpacityPct ?>%</span>
-                        </div>
-                        <small style="color: #6a837c;">6% gives an authentic medical stationery look without obstructing doctor handwriting.</small>
-                    </label>
-
-                    <!-- Emblem Status -->
-                    <label>
-                        Watermark Graphic Emblem
-                        <div style="display: flex; align-items: center; gap: 12px; padding: 10px; background: #f7fcfa; border: 1px solid #dcece5; border-radius: 4px;">
-                            <img src="<?= e($cfg['icon_path']) ?>" alt="Watermark Graphic" style="width: 38px; height: 38px; object-fit: contain;">
-                            <div>
-                                <strong style="font-size: 13px; color: #11382b; display: block;">Active Hospital Emblem</strong>
-                                <small style="color: #6a837c;">Watermark automatically uses the sharp emblem icon uploaded in Section 4.</small>
-                            </div>
-                        </div>
-                    </label>
+                    </form>
                 </div>
             </div>
 
-            <!-- CARD 4: HEADER, LOGO & TOP ACCENT -->
-            <div class="tpl-card">
-                <div class="tpl-card-head">
-                    <h3 class="tpl-card-title">
-                        <span class="tpl-badge-num">4</span>
-                        <span>Header, Logo & Branding (Hospital Name, Tagline & Emblem)</span>
-                    </h3>
-                    <span class="tpl-badge-pill" style="background:#e0f2f1; color:#00695c;">BRANDING</span>
-                </div>
-                <div class="form-grid">
-                    <label>
-                        Hospital Name (Text Beside Logo)
-                        <input type="text" name="hospital_name" value="<?= e($cfg['hospital_name']) ?>" required placeholder="e.g. Motherland">
-                    </label>
-
-                    <label>
-                        Hospital Subtitle / Tagline
-                        <input type="text" name="hospital_tagline" value="<?= e($cfg['hospital_tagline']) ?>" placeholder="e.g. HOSPITAL">
-                    </label>
-
-                    <label class="span-2">
-                        Document Main Title (Consultation Section Header)
-                        <input type="text" name="doc_title" value="<?= e($cfg['doc_title']) ?>" placeholder="e.g. Consultation Paper(OPD)">
-                        <small style="color: #6a837c;">Displayed prominently above the patient registration table on Page 1 (omitted on Page 2 continuation sheet).</small>
-                    </label>
-
-                    <label>
-                        Top Left Accent Bar Color
-                        <div style="display: flex; gap: 10px; align-items: center;">
-                            <input type="color" id="accent_color_picker" name="accent_color" value="<?= e($cfg['accent_color']) ?>" style="width: 54px; height: 44px; padding: 3px; cursor: pointer; border-radius: 4px;">
-                            <input type="text" id="accent_color_hex" value="<?= e($cfg['accent_color']) ?>" style="flex: 1; font-weight: 700;">
-                        </div>
-                    </label>
-
-                    <label>
-                        Accent Bar Height (Top Left Vertical Tab)
-                        <div class="input-num-group">
-                            <input type="number" name="accent_height" id="acc_height_input" min="15" max="60" step="1" value="<?= $accentHeightVal ?>">
-                            <span class="unit-tag">mm</span>
-                        </div>
-                        <div class="slider-sync-wrap">
-                            <input type="range" id="acc_height_slider" min="15" max="60" step="1" value="<?= $accentHeightVal ?>">
-                            <span id="acc_height_badge" style="font-weight: 700; font-size: 12px; color: #0d4a34; width: 60px;"><?= $accentHeightVal ?> mm</span>
-                        </div>
-                        <small style="color: #6a837c;">Standard is 28mm (aligns exactly with the top header block).</small>
-                    </label>
-
-                    <label class="span-2">
-                        Hospital Emblem Icon (Upload ONLY the Logo Emblem!)
-                        <div style="display: flex; align-items: center; gap: 16px; background: #fbfdfc; padding: 14px; border: 1px solid #dcece5; border-radius: 4px;">
-                            <img src="<?= e($cfg['icon_path']) ?>" alt="Current Icon" style="width: 52px; height: 52px; object-fit: contain; background: #fff; padding: 4px; border-radius: 4px; border: 1px solid #cce2d8;">
-                            <div style="flex: 1;">
-                                <input type="file" name="custom_icon" accept="image/png,image/jpeg,image/webp">
-                                <small style="color: #6a837c; display: block; margin-top: 5px;">
-                                    Upload only the hospital emblem icon (PNG transparent recommended). The name and tagline are rendered next to it in sharp vector text.
-                                </small>
-                            </div>
-                        </div>
-                    </label>
-                </div>
-            </div>
-
-            <!-- CARD 5: DOCTOR & DEPARTMENT -->
-            <div class="tpl-card">
-                <div class="tpl-card-head">
-                    <h3 class="tpl-card-title">
-                        <span class="tpl-badge-num">5</span>
-                        <span>Doctor & Clinical Department</span>
-                    </h3>
-                    <span class="tpl-badge-pill" style="background:#fff3e0; color:#e65100;">CLINICAL INFO</span>
-                </div>
-                <div class="form-grid">
-                    <label>
-                        Doctor Name (Banner Header)
-                        <input type="text" name="doctor_name" value="<?= e($cfg['doctor_name']) ?>" required placeholder="e.g. Dr. ANVITI SARAF">
-                    </label>
-
-                    <label>
-                        Default Doctor Department
-                        <input type="text" name="doctor_dept" value="<?= e($cfg['doctor_dept']) ?>" placeholder="e.g. IVF / Cardiology / Gynecology">
-                    </label>
-                </div>
-            </div>
-
-            <!-- CARD 6: PATIENT INFORMATION FIELDS & LABELS -->
-            <div class="tpl-card">
-                <div class="tpl-card-head">
-                    <h3 class="tpl-card-title">
-                        <span class="tpl-badge-num">6</span>
-                        <span>Patient Information Fields & Labels (मरीज़ विवरण फ़ील्ड्स)</span>
-                    </h3>
-                    <span class="tpl-badge-pill" style="background:#e8f5e9; color:#2e7d32;">12 FIELDS</span>
-                </div>
-                <p style="color: #6a837c; font-size: 13px; margin: 0 0 16px;">Two-column patient registration layout matching the physical OPD form. You can customize labels and toggle individual fields on or off.</p>
-
-                <div class="grid-2" style="gap: 20px;">
-                    <!-- Left Column Fields -->
-                    <div style="background: #fbfdfc; border: 1px solid #dcece5; border-radius: 4px; padding: 14px;">
-                        <h4 style="margin: 0 0 12px; font-size: 13px; color: #0d4a34; text-transform: uppercase; letter-spacing: 0.5px;">Left Column Fields</h4>
-                        
-                        <div class="stack" style="gap: 10px;">
-                            <div style="display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center;">
-                                <label style="margin: 0; font-size: 12px;">UHID Label <input type="text" name="lbl_uhid" value="<?= e($cfg['lbl_uhid']) ?>"></label>
-                                <label style="margin: 0; font-size: 11px; align-items: center; cursor: pointer;"><input type="checkbox" name="show_uhid" value="1" <?= !empty($cfg['show_uhid']) ? 'checked' : '' ?> style="width:18px;height:18px;"> Show</label>
-                            </div>
-
-                            <div style="display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center;">
-                                <label style="margin: 0; font-size: 12px;">Patient Name Label <input type="text" name="lbl_name" value="<?= e($cfg['lbl_name']) ?>"></label>
-                                <label style="margin: 0; font-size: 11px; align-items: center; cursor: pointer;"><input type="checkbox" name="show_name" value="1" <?= !empty($cfg['show_name']) ? 'checked' : '' ?> style="width:18px;height:18px;"> Show</label>
-                            </div>
-
-                            <div style="display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center;">
-                                <label style="margin: 0; font-size: 12px;">Age / Sex Label <input type="text" name="lbl_age_sex" value="<?= e($cfg['lbl_age_sex']) ?>"></label>
-                                <label style="margin: 0; font-size: 11px; align-items: center; cursor: pointer;"><input type="checkbox" name="show_age_sex" value="1" <?= !empty($cfg['show_age_sex']) ? 'checked' : '' ?> style="width:18px;height:18px;"> Show</label>
-                            </div>
-
-                            <div style="display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center;">
-                                <label style="margin: 0; font-size: 12px;">Guardian Label <input type="text" name="lbl_guardian" value="<?= e($cfg['lbl_guardian']) ?>"></label>
-                                <label style="margin: 0; font-size: 11px; align-items: center; cursor: pointer;"><input type="checkbox" name="show_guardian" value="1" <?= !empty($cfg['show_guardian']) ? 'checked' : '' ?> style="width:18px;height:18px;"> Show</label>
-                            </div>
-
-                            <div style="display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center;">
-                                <label style="margin: 0; font-size: 12px;">Contact No. Label <input type="text" name="lbl_contact" value="<?= e($cfg['lbl_contact']) ?>"></label>
-                                <label style="margin: 0; font-size: 11px; align-items: center; cursor: pointer;"><input type="checkbox" name="show_contact" value="1" <?= !empty($cfg['show_contact']) ? 'checked' : '' ?> style="width:18px;height:18px;"> Show</label>
-                            </div>
-
-                            <div style="display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center;">
-                                <label style="margin: 0; font-size: 12px;">Address Label <input type="text" name="lbl_address" value="<?= e($cfg['lbl_address']) ?>"></label>
-                                <label style="margin: 0; font-size: 11px; align-items: center; cursor: pointer;"><input type="checkbox" name="show_address" value="1" <?= !empty($cfg['show_address']) ? 'checked' : '' ?> style="width:18px;height:18px;"> Show</label>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Right Column Fields -->
-                    <div style="background: #fbfdfc; border: 1px solid #dcece5; border-radius: 4px; padding: 14px;">
-                        <h4 style="margin: 0 0 12px; font-size: 13px; color: #0d4a34; text-transform: uppercase; letter-spacing: 0.5px;">Right Column Fields</h4>
-
-                        <div class="stack" style="gap: 10px;">
-                            <div style="display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center;">
-                                <label style="margin: 0; font-size: 12px;">Bill No. Label <input type="text" name="lbl_bill" value="<?= e($cfg['lbl_bill']) ?>"></label>
-                                <label style="margin: 0; font-size: 11px; align-items: center; cursor: pointer;"><input type="checkbox" name="show_bill" value="1" <?= !empty($cfg['show_bill']) ? 'checked' : '' ?> style="width:18px;height:18px;"> Show</label>
-                            </div>
-
-                            <div style="display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center;">
-                                <label style="margin: 0; font-size: 12px;">Date Label <input type="text" name="lbl_date" value="<?= e($cfg['lbl_date']) ?>"></label>
-                                <label style="margin: 0; font-size: 11px; align-items: center; cursor: pointer;"><input type="checkbox" name="show_date" value="1" <?= !empty($cfg['show_date']) ? 'checked' : '' ?> style="width:18px;height:18px;"> Show</label>
-                            </div>
-
-                            <div style="display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center;">
-                                <label style="margin: 0; font-size: 12px;">Panel Label <input type="text" name="lbl_panel" value="<?= e($cfg['lbl_panel']) ?>"></label>
-                                <label style="margin: 0; font-size: 11px; align-items: center; cursor: pointer;"><input type="checkbox" name="show_panel" value="1" <?= !empty($cfg['show_panel']) ? 'checked' : '' ?> style="width:18px;height:18px;"> Show</label>
-                            </div>
-
-                            <div style="display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center;">
-                                <label style="margin: 0; font-size: 12px;">Doctor Dept Label <input type="text" name="lbl_dept" value="<?= e($cfg['lbl_dept']) ?>"></label>
-                                <label style="margin: 0; font-size: 11px; align-items: center; cursor: pointer;"><input type="checkbox" name="show_dept" value="1" <?= !empty($cfg['show_dept']) ? 'checked' : '' ?> style="width:18px;height:18px;"> Show</label>
-                            </div>
-
-                            <div style="display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center;">
-                                <label style="margin: 0; font-size: 12px;">Room No Label <input type="text" name="lbl_room" value="<?= e($cfg['lbl_room']) ?>"></label>
-                                <label style="margin: 0; font-size: 11px; align-items: center; cursor: pointer;"><input type="checkbox" name="show_room" value="1" <?= !empty($cfg['show_room']) ? 'checked' : '' ?> style="width:18px;height:18px;"> Show</label>
-                            </div>
-
-                            <div style="display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center;">
-                                <label style="margin: 0; font-size: 12px;">App No Label <input type="text" name="lbl_app" value="<?= e($cfg['lbl_app']) ?>"></label>
-                                <label style="margin: 0; font-size: 11px; align-items: center; cursor: pointer;"><input type="checkbox" name="show_app" value="1" <?= !empty($cfg['show_app']) ? 'checked' : '' ?> style="width:18px;height:18px;"> Show</label>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- CARD 7: VITALS & CLINICAL MEASUREMENTS -->
-            <div class="tpl-card">
-                <div class="tpl-card-head">
-                    <h3 class="tpl-card-title">
-                        <span class="tpl-badge-num">7</span>
-                        <span>Vitals Table Labels, Units & Toggles (वाइटल्स एवं इकाइयां)</span>
-                    </h3>
-                    <span class="tpl-badge-pill" style="background:#e1f5fe; color:#0277bd;">8 VITALS</span>
-                </div>
-                <div class="form-grid">
-                    <div style="display: grid; grid-template-columns: 2fr 1.2fr auto; gap: 10px; align-items: center;">
-                        <label style="margin: 0; font-size: 12px;">Height Label <input type="text" name="lbl_height" value="<?= e($cfg['lbl_height']) ?>"></label>
-                        <label style="margin: 0; font-size: 12px;">Unit <input type="text" name="unit_height" value="<?= e($cfg['unit_height']) ?>"></label>
-                        <label style="margin: 0; font-size: 11px; align-items: center; cursor: pointer;"><input type="checkbox" name="show_vital_height" value="1" <?= !empty($cfg['show_vital_height']) ? 'checked' : '' ?> style="width:18px;height:18px;"> Show</label>
-                    </div>
-
-                    <div style="display: grid; grid-template-columns: 2fr 1.2fr auto; gap: 10px; align-items: center;">
-                        <label style="margin: 0; font-size: 12px;">Weight Label <input type="text" name="lbl_weight" value="<?= e($cfg['lbl_weight']) ?>"></label>
-                        <label style="margin: 0; font-size: 12px;">Unit <input type="text" name="unit_weight" value="<?= e($cfg['unit_weight']) ?>"></label>
-                        <label style="margin: 0; font-size: 11px; align-items: center; cursor: pointer;"><input type="checkbox" name="show_vital_weight" value="1" <?= !empty($cfg['show_vital_weight']) ? 'checked' : '' ?> style="width:18px;height:18px;"> Show</label>
-                    </div>
-
-                    <div style="display: grid; grid-template-columns: 2fr 1.2fr auto; gap: 10px; align-items: center;">
-                        <label style="margin: 0; font-size: 12px;">Temp Label <input type="text" name="lbl_temp" value="<?= e($cfg['lbl_temp']) ?>"></label>
-                        <label style="margin: 0; font-size: 12px;">Unit <input type="text" name="unit_temp" value="<?= e($cfg['unit_temp']) ?>"></label>
-                        <label style="margin: 0; font-size: 11px; align-items: center; cursor: pointer;"><input type="checkbox" name="show_vital_temp" value="1" <?= !empty($cfg['show_vital_temp']) ? 'checked' : '' ?> style="width:18px;height:18px;"> Show</label>
-                    </div>
-
-                    <div style="display: grid; grid-template-columns: 2fr 1.2fr auto; gap: 10px; align-items: center;">
-                        <label style="margin: 0; font-size: 12px;">Pulse Label <input type="text" name="lbl_pulse" value="<?= e($cfg['lbl_pulse']) ?>"></label>
-                        <label style="margin: 0; font-size: 12px;">Unit <input type="text" name="unit_pulse" value="<?= e($cfg['unit_pulse']) ?>"></label>
-                        <label style="margin: 0; font-size: 11px; align-items: center; cursor: pointer;"><input type="checkbox" name="show_vital_pulse" value="1" <?= !empty($cfg['show_vital_pulse']) ? 'checked' : '' ?> style="width:18px;height:18px;"> Show</label>
-                    </div>
-
-                    <div style="display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center;">
-                        <label style="margin: 0; font-size: 12px;">Pain Score Label <input type="text" name="lbl_pain" value="<?= e($cfg['lbl_pain']) ?>"></label>
-                        <label style="margin: 0; font-size: 11px; align-items: center; cursor: pointer;"><input type="checkbox" name="show_vital_pain" value="1" <?= !empty($cfg['show_vital_pain']) ? 'checked' : '' ?> style="width:18px;height:18px;"> Show</label>
-                    </div>
-
-                    <div style="display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center;">
-                        <label style="margin: 0; font-size: 12px;">Allergies Label <input type="text" name="lbl_allergies" value="<?= e($cfg['lbl_allergies']) ?>"></label>
-                        <label style="margin: 0; font-size: 11px; align-items: center; cursor: pointer;"><input type="checkbox" name="show_vital_allergies" value="1" <?= !empty($cfg['show_vital_allergies']) ? 'checked' : '' ?> style="width:18px;height:18px;"> Show</label>
-                    </div>
-
-                    <div style="display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center;">
-                        <label style="margin: 0; font-size: 12px;">BMI Label <input type="text" name="lbl_bmi" value="<?= e($cfg['lbl_bmi']) ?>"></label>
-                        <label style="margin: 0; font-size: 11px; align-items: center; cursor: pointer;"><input type="checkbox" name="show_vital_bmi" value="1" <?= !empty($cfg['show_vital_bmi']) ? 'checked' : '' ?> style="width:18px;height:18px;"> Show</label>
-                    </div>
-
-                    <div style="display: grid; grid-template-columns: 2fr 1.2fr auto; gap: 10px; align-items: center;">
-                        <label style="margin: 0; font-size: 12px;">BP Label <input type="text" name="lbl_bp" value="<?= e($cfg['lbl_bp']) ?>"></label>
-                        <label style="margin: 0; font-size: 12px;">Unit <input type="text" name="unit_bp" value="<?= e($cfg['unit_bp']) ?>"></label>
-                        <label style="margin: 0; font-size: 11px; align-items: center; cursor: pointer;"><input type="checkbox" name="show_vital_bp" value="1" <?= !empty($cfg['show_vital_bp']) ? 'checked' : '' ?> style="width:18px;height:18px;"> Show</label>
-                    </div>
-                </div>
-            </div>
-
-            <!-- CARD 8: FOOTER, CONTACTS & VALIDITY -->
-            <div class="tpl-card">
-                <div class="tpl-card-head">
-                    <h3 class="tpl-card-title">
-                        <span class="tpl-badge-num">8</span>
-                        <span>Footer Contacts, Validity Note & Legal Information</span>
-                    </h3>
-                    <span class="tpl-badge-pill" style="background:#fce4ec; color:#c2185b;">FOOTER & LEGAL</span>
-                </div>
-                <div class="form-grid">
-                    <label class="span-2">
-                        Validity Note Text (Top of Footer Notice)
-                        <input type="text" name="validity_note" value="<?= e($cfg['validity_note']) ?>" placeholder="e.g. Bill is valid for 3 days Including date of Billing.">
-                    </label>
-
-                    <label class="span-2">
-                        Hospital Physical Address (Footer Column 1)
-                        <input type="text" name="hospital_address" value="<?= e($cfg['hospital_address']) ?>" placeholder="e.g. Hospital.: Sector 119, Noida - 201305, U.P., India">
-                    </label>
-
-                    <label class="span-2">
-                        Registered Office & CIN (Multi-line Text + Numbers)
-                        <textarea name="reg_office" rows="3" placeholder="Reg. Office Address&#10;City, State - PIN&#10;CIN: XXXXXXXXXX"><?= e($cfg['reg_office']) ?></textarea>
-                        <small style="color: #6a837c;">Enter complete registered office address and CIN number (line breaks are preserved).</small>
-                    </label>
-
-                    <label>
-                        WhatsApp Number (Phone / Numbers)
-                        <input type="tel" name="phone_whatsapp" value="<?= e($cfg['phone_whatsapp']) ?>" placeholder="+91 99937 77444">
-                        <small style="color: #6a837c;">Input type="tel" enables number keypad on mobile & handhelds.</small>
-                    </label>
-
-                    <label>
-                        Landline / Emergency Phone (Phone / Numbers)
-                        <input type="tel" name="phone_landline" value="<?= e($cfg['phone_landline']) ?>" placeholder="+91 120 4154949">
-                        <small style="color: #6a837c;">Input type="tel" ensures numeric phone formatting.</small>
-                    </label>
-
-                    <label>
-                        Hospital Email Address
-                        <input type="email" name="email" value="<?= e($cfg['email']) ?>" placeholder="info@motherlandhospital.com">
-                    </label>
-
-                    <label>
-                        Hospital Website
-                        <input type="text" name="website" value="<?= e($cfg['website']) ?>" placeholder="www.motherlandhospital.com">
-                    </label>
-                </div>
-            </div>
-
-            <!-- STICKY ACTION BAR -->
-            <div class="sticky-action-bar">
-                <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                    <button class="btn btn-primary" type="submit" style="padding: 12px 24px; font-size: 15px;">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
-                        Save Template Settings
-                    </button>
-                    <?php if ($cfg['icon_path'] !== 'assets/motherland-icon.png'): ?>
-                        <button class="btn btn-soft" type="submit" name="reset_icon" value="1">Reset Icon to Default</button>
-                    <?php endif; ?>
-                </div>
-
-                <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                    <a class="btn btn-soft" href="print_opd.php?template_id=<?= $motherlandTpl['id'] ?>&pages=1">Preview 1-Page</a>
-                    <a class="btn btn-soft" href="print_opd.php?template_id=<?= $motherlandTpl['id'] ?>&pages=2">Preview 2-Pages</a>
-                </div>
-            </div>
-        </form>
-
-        <script>
-        // Two-way synchronization between numeric inputs and sliders
-        (function() {
-            // Watermark Size
-            const wmSizeIn = document.getElementById('wm_size_input');
-            const wmSizeSl = document.getElementById('wm_size_slider');
-            const wmSizeBadge = document.getElementById('wm_size_badge');
-            function syncWmSize(v) {
-                wmSizeIn.value = v;
-                wmSizeSl.value = v;
-                if (wmSizeBadge) {
-                    const tag = v < 85 ? 'Small' : (v > 130 ? 'Large' : 'Standard');
-                    wmSizeBadge.textContent = v + ' mm (' + tag + ')';
-                }
-            }
-            if (wmSizeIn && wmSizeSl) {
-                wmSizeIn.addEventListener('input', e => syncWmSize(e.target.value));
-                wmSizeSl.addEventListener('input', e => syncWmSize(e.target.value));
-            }
-
-            // Watermark Opacity
-            const wmOpIn = document.getElementById('wm_opacity_input');
-            const wmOpSl = document.getElementById('wm_opacity_slider');
-            const wmOpBadge = document.getElementById('wm_opacity_badge');
-            function syncWmOp(v) {
-                wmOpIn.value = v;
-                wmOpSl.value = v;
-                if (wmOpBadge) wmOpBadge.textContent = v + '%';
-            }
-            if (wmOpIn && wmOpSl) {
-                wmOpIn.addEventListener('input', e => syncWmOp(e.target.value));
-                wmOpSl.addEventListener('input', e => syncWmOp(e.target.value));
-            }
-
-            // Accent Bar Height
-            const accIn = document.getElementById('acc_height_input');
-            const accSl = document.getElementById('acc_height_slider');
-            const accBadge = document.getElementById('acc_height_badge');
-            function syncAcc(v) {
-                accIn.value = v;
-                accSl.value = v;
-                if (accBadge) accBadge.textContent = v + ' mm';
-            }
-            if (accIn && accSl) {
-                accIn.addEventListener('input', e => syncAcc(e.target.value));
-                accSl.addEventListener('input', e => syncAcc(e.target.value));
-            }
-
-            // Accent Bar Color
-            const colPick = document.getElementById('accent_color_picker');
-            const colHex = document.getElementById('accent_color_hex');
-            if (colPick && colHex) {
-                colPick.addEventListener('input', e => { colHex.value = e.target.value; });
-                colHex.addEventListener('input', e => {
-                    if (/^#[0-9A-Fa-f]{6}$/.test(e.target.value)) {
-                        colPick.value = e.target.value;
-                    }
-                });
-            }
-        })();
-        </script>
-    <?php else: ?>
-        <div class="empty">Motherland code template record is not yet initialized.</div>
-    <?php endif; ?>
-</section>
-
-<!-- ========================================================= -->
-<!-- 2. ORIGINAL IMAGE TEMPLATES SECTION (100% UNTOUCHED)     -->
-<!-- ========================================================= -->
-<div class="page-title" style="margin-top: 10px;">
-    <div>
-        <h3>Scanned Image Templates (Background Scans)</h3>
-        <p>Upload clean A4 JPG/PNG/WEBP background scans and place patient fields using the drag-and-drop Layout Editor.</p>
-    </div>
-</div>
-
-<div class="grid-2">
-    <!-- Existing Upload template card (completely preserved) -->
-    <section class="card">
-        <h2>Upload template</h2>
-        <form method="post" enctype="multipart/form-data" class="stack">
-            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-            <label>
-                Template name
-                <input name="name" required placeholder="e.g. Sample Scan Template">
-            </label>
-            <label>
-                Image file
-                <input type="file" name="template_file" accept="image/jpeg,image/png,image/webp" required>
-            </label>
-            <button class="btn btn-primary">Upload template</button>
-        </form>
-        <div class="note">For exact A4 printing, use a straight, cropped A4 scan with no camera perspective.</div>
-    </section>
-
-    <!-- Existing Current templates card (completely preserved) -->
-    <section class="card">
-        <h2>Current image templates</h2>
-        <div class="template-list">
-            <?php foreach ($imageTemplates as $t): ?>
-                <div class="template-row">
-                    <img src="<?= e($t['file_path']) ?>" alt="Thumbnail">
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px;">
+                <!-- Type 1 Box -->
+                <div style="background:#f7fdfb; border:1.5px solid #b2dfdb; border-radius:10px; padding:16px; display:flex; flex-direction:column; justify-content:space-between; gap:12px;">
                     <div>
-                        <strong><?= e($t['name']) ?></strong>
-                        <small><?= e($t['width'] . '×' . $t['height'] . ' · ' . ($t['active'] ? 'Active' : 'Blocked')) ?></small>
+                        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+                            <strong style="font-size:14.5px; color:#064e3b; display:flex; align-items:center; gap:6px;">
+                                <span>🩺 Type 1: Digital Vector Code Template</span>
+                            </strong>
+                            <span style="font-size:11px; font-weight:700; padding:2px 8px; border-radius:4px; background:#dcfce7; color:#15803d;">BLANK PAPER PRINT</span>
+                        </div>
+                        <p style="margin:0; font-size:12.5px; color:#334155; line-height:1.45;">
+                            Plain A4 blank paper par computer se full slip draw karta hai (Hospital logo, header, vitals table, doctor cabin, 1-page/2-page clinical sheet). Physical pad ki zaroorat nahi.
+                        </p>
                     </div>
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <a class="link" href="template_editor.php?template_id=<?= $t['id'] ?>">Edit layout</a>
-                        <form method="post" style="display: inline;">
-                            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                            <input type="hidden" name="toggle_id" value="<?= $t['id'] ?>">
-                            <button class="mini"><?= $t['active'] ? 'Block' : 'Unblock' ?></button>
-                        </form>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <a href="templates.php?tab=customizer" class="action-btn-pill primary">
+                            Customize Digital Code &rarr;
+                        </a>
+                        <button type="button" class="action-btn-pill" onclick="openCreateCodeModal()">+ New Code Tpl</button>
+                    </div>
+                </div>
+
+                <!-- Type 2 Box -->
+                <div style="background:#f0f9ff; border:1.5px solid #bae6fd; border-radius:10px; padding:16px; display:flex; flex-direction:column; justify-content:space-between; gap:12px;">
+                    <div>
+                        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+                            <strong style="font-size:14.5px; color:#0c4a6e; display:flex; align-items:center; gap:6px;">
+                                <span>🖼️ Type 2: Uploaded Pre-Printed Pad Scan</span>
+                            </strong>
+                            <span style="font-size:11px; font-weight:700; padding:2px 8px; border-radius:4px; background:#e0f2fe; color:#0284c7;">PHYSICAL PAD PRINT</span>
+                        </div>
+                        <p style="margin:0; font-size:12.5px; color:#334155; line-height:1.45;">
+                            Hospital ke printed physical pad/parche ki photo upload karke text fields ko exact line par drag & drop set karein. Printer sirf text print karega printed stationery par.
+                        </p>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                        <?php 
+                        $primaryImgId = !empty($imageTemplates) ? (int)$imageTemplates[0]['id'] : 0;
+                        ?>
+                        <?php if ($primaryImgId > 0): ?>
+                            <a href="template_editor.php?template_id=<?= $primaryImgId ?>" class="action-btn-pill" style="background:#e0f2fe; border-color:#93c5fd; color:#0369a1; font-weight:700;">
+                                Open Drag-Drop Editor &rarr;
+                            </a>
+                            <a href="templates.php?tab=images" class="action-btn-pill" style="background:#f0f9ff; border-color:#bae6fd; color:#0369a1;">
+                                Manage Pad Scans (<?= count($imageTemplates) ?>)
+                            </a>
+                        <?php else: ?>
+                            <button type="button" class="action-btn-pill" onclick="openUploadImageModal()" style="background:#e0f2fe; border-color:#93c5fd; color:#0369a1; font-weight:700;">
+                                Open Drag-Drop Editor &rarr;
+                            </button>
+                        <?php endif; ?>
+                        <button type="button" class="action-btn-pill primary" onclick="openUploadImageModal()">+ Upload New Pad Scan</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="tpl-cards-grid">
+            <?php foreach ($allTemplates as $tpl): 
+                $isDefault = ((int)$tpl['id'] === $defaultTemplateId);
+                $isCode = is_code_template($tpl);
+                $pageSize = $tpl['page_size'] ?: 'A4';
+                $orientation = ucfirst($tpl['orientation'] ?: 'Portrait');
+            ?>
+                <div class="tpl-overview-card <?= $isDefault ? 'is-default' : '' ?> <?= empty($tpl['active']) ? 'is-inactive' : '' ?>">
+                    <div>
+                        <div class="card-top-header">
+                            <div class="type-indicator-avatar <?= $isCode ? 'code' : 'image' ?>">
+                                <?php if ($isCode): ?>
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="16 18 22 12 16 6"></polyline>
+                                        <polyline points="8 6 2 12 8 18"></polyline>
+                                    </svg>
+                                <?php else: ?>
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                        <rect width="18" height="18" x="3" y="3" rx="2"></rect>
+                                        <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                                        <path d="M21 15l-5-5L5 21"></path>
+                                    </svg>
+                                <?php endif; ?>
+                            </div>
+                            <div class="card-title-details">
+                                <h3><?= e($tpl['name']) ?></h3>
+                                <div class="card-badges-row">
+                                    <span class="badge-tag-pill <?= $isCode ? 'code' : 'image' ?>">
+                                        <?= $isCode ? '🩺 Vector Digital' : '🖼️ Pre-printed Scan' ?>
+                                    </span>
+                                    <?php if ($isDefault): ?>
+                                        <span class="badge-tag-pill default">★ Default OPD Template</span>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card-specs-list" style="margin-top:14px;">
+                            <div><span>Paper Format:</span> <strong><?= e($pageSize) ?> (<?= e($orientation) ?>)</strong></div>
+                            <div><span>Rendering Engine:</span> <strong><?= $isCode ? 'Dynamic HTML5 Engine' : 'Pixel Coordinate Overlay' ?></strong></div>
+                            <div><span>Reception Status:</span> <strong style="color:<?= !empty($tpl['active']) ? '#15803d' : '#94a3b8' ?>"><?= !empty($tpl['active']) ? '● Active' : '○ Disabled' ?></strong></div>
+                        </div>
+                    </div>
+
+                    <div class="card-bottom-actions">
+                        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                            <?php if ($isCode): ?>
+                                <a href="templates.php?tab=customizer&template_id=<?= $tpl['id'] ?>" class="action-btn-pill primary">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                                    <span>Customize</span>
+                                </a>
+                            <?php endif; ?>
+
+                            <a href="template_editor.php?template_id=<?= $tpl['id'] ?>" class="action-btn-pill">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M9 3v18"></path></svg>
+                                <span>Layout</span>
+                            </a>
+
+                            <a href="print_opd.php?template_id=<?= $tpl['id'] ?>" target="_blank" class="action-btn-pill" title="Print Preview">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                                <span>Preview</span>
+                            </a>
+                        </div>
+
+                        <div style="display:flex; gap:6px; align-items:center;">
+                            <?php if (!$isDefault): ?>
+                                <form method="post" action="templates.php" style="display:inline;">
+                                    <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                                    <input type="hidden" name="set_default_id" value="<?= $tpl['id'] ?>">
+                                    <button type="submit" class="action-btn-pill" title="Set as default OPD slip">Make Default</button>
+                                </form>
+                            <?php endif; ?>
+
+                            <form method="post" action="templates.php" style="display:inline;">
+                                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                                <input type="hidden" name="toggle_id" value="<?= $tpl['id'] ?>">
+                                <button type="submit" class="action-btn-pill" title="Toggle active status">
+                                    <?= !empty($tpl['active']) ? 'Block' : 'Activate' ?>
+                                </button>
+                            </form>
+
+                            <?php if (!$isDefault): ?>
+                                <form method="post" action="templates.php" style="display:inline;" onsubmit="return confirm('Delete this template?');">
+                                    <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                                    <input type="hidden" name="action" value="delete_template">
+                                    <input type="hidden" name="id" value="<?= $tpl['id'] ?>">
+                                    <button type="submit" class="action-btn-pill danger" title="Delete template">Delete</button>
+                                </form>
+                            <?php endif; ?>
+                        </div>
                     </div>
                 </div>
             <?php endforeach; ?>
+        </div>
+
+    <!-- ===================================================================== -->
+    <!-- TAB 2: DIGITAL CODE TEMPLATE CUSTOMIZER                               -->
+    <!-- ===================================================================== -->
+    <?php elseif ($activeTab === 'customizer'): ?>
+        <?php if ($selectedCodeTpl): 
+            $wmOpacityVal = (float)($cfg['watermark_opacity'] ?? 0.06);
+            $wmOpacityPct = (int)round($wmOpacityVal <= 1.0 ? $wmOpacityVal * 100 : $wmOpacityVal);
+            $wmSizeVal = (int)($cfg['watermark_size'] ?? 105);
+            if ($wmSizeVal < 40) $wmSizeVal = 105;
+            $accentHeightVal = (int)($cfg['accent_height'] ?? 28);
+            if ($accentHeightVal < 15) $accentHeightVal = 28;
+        ?>
+            <!-- Template Context Header -->
+            <div class="tpl-context-bar">
+                <div class="tpl-context-left">
+                    <span class="tpl-active-badge">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                        Editing: <strong><?= e($selectedCodeTpl['name']) ?></strong>
+                    </span>
+                    <span style="font-size:12px; color:#64748b;">Format: <strong><?= e($pageConfig['pageSize'] ?? 'A4') ?> · <?= ucfirst($pageConfig['orientation'] ?? 'portrait') ?></strong></span>
+                    <?php if ((int)$selectedCodeTpl['id'] === $defaultTemplateId): ?>
+                        <span class="badge-tag-pill default">★ Default System Template</span>
+                    <?php endif; ?>
+                </div>
+
+                <div class="tpl-context-right">
+                    <?php if (count($codeTemplates) > 1): ?>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <label for="selectCodeTpl" style="font-size:12.5px; font-weight:600; color:#475569;">Switch Template:</label>
+                            <select id="selectCodeTpl" class="prod-select" style="width:auto; padding:6px 12px; font-size:13px;" onchange="window.location.href='templates.php?tab=customizer&template_id=' + this.value">
+                                <?php foreach ($codeTemplates as $ct): ?>
+                                    <option value="<?= $ct['id'] ?>" <?= $selectedCodeTpl['id'] === $ct['id'] ? 'selected' : '' ?>>
+                                        <?= e($ct['name']) ?> <?= ((int)$ct['id'] === $defaultTemplateId) ? ' (Default)' : '' ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                    <?php endif; ?>
+
+                    <a href="template_editor.php?template_id=<?= $selectedCodeTpl['id'] ?>" class="btn-dock-link">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M9 3v18"></path></svg>
+                        <span>Visual Coordinate Editor &rarr;</span>
+                    </a>
+                </div>
+            </div>
+
+            <!-- CUSTOMIZER CARDS FORM -->
+            <form method="post" enctype="multipart/form-data" id="customizerForm">
+                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                <input type="hidden" name="save_code_template" value="1">
+                <input type="hidden" name="template_id" value="<?= $selectedCodeTpl['id'] ?>">
+
+                <div class="prod-card-group">
+                    <!-- ========================================================= -->
+                    <!-- CARD 1: HOSPITAL IDENTITY & BRANDING                      -->
+                    <!-- ========================================================= -->
+                    <div class="prod-card">
+                        <div class="prod-card-head">
+                            <div class="prod-card-title-wrap">
+                                <div class="prod-card-icon-box teal">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M3 21h18"></path>
+                                        <path d="M5 21V7l8-4v18"></path>
+                                        <path d="M19 21V11l-6-4"></path>
+                                        <path d="M9 9h1"></path>
+                                        <path d="M9 13h1"></path>
+                                        <path d="M9 17h1"></path>
+                                    </svg>
+                                </div>
+                                <div class="prod-card-headings">
+                                    <h3>1. Hospital Identity, Brand Logo & Document Title</h3>
+                                    <p>Configure hospital naming, branding, document title, and high-resolution logo</p>
+                                </div>
+                            </div>
+                            <span class="prod-badge-tag" style="background:#e6f5f2; color:#087f6c;">IDENTITY & LOGO</span>
+                        </div>
+
+                        <div class="prod-grid">
+                            <div class="prod-field">
+                                <label class="prod-label">Hospital Name (Primary Branding) <span style="color:#ef4444;">*</span></label>
+                                <input type="text" name="hospital_name" class="prod-input" value="<?= e($cfg['hospital_name']) ?>" required placeholder="e.g. Motherland Hospital">
+                            </div>
+
+                            <div class="prod-field">
+                                <label class="prod-label">Tagline / Subtitle (Under Hospital Name)</label>
+                                <input type="text" name="hospital_tagline" class="prod-input" value="<?= e($cfg['hospital_tagline']) ?>" placeholder="e.g. HOSPITAL & RESEARCH CENTRE">
+                            </div>
+
+                            <div class="prod-field">
+                                <label class="prod-label">Document Title (Centered on Slip)</label>
+                                <input type="text" name="doc_title" class="prod-input" value="<?= e($cfg['doc_title']) ?>" placeholder="e.g. Consultation Paper(OPD)">
+                            </div>
+
+                            <div class="prod-field">
+                                <label class="prod-label">Default Doctor Department</label>
+                                <input type="text" name="doctor_dept" class="prod-input" value="<?= e($cfg['doctor_dept']) ?>" placeholder="e.g. IVF / General Medicine">
+                            </div>
+
+                            <!-- High-End Logo Uploader Component -->
+                            <div class="prod-field span-2">
+                                <div class="prod-logo-uploader">
+                                    <div class="prod-logo-preview-col">
+                                        <div class="prod-logo-box">
+                                            <img id="logoPreviewImg" src="<?= e($cfg['icon_path']) ?>" alt="Hospital Logo">
+                                        </div>
+                                        <div>
+                                            <div style="font-weight:700; font-size:13.5px; color:#0f172a;">Hospital Brand Logo / Watermark Icon</div>
+                                            <div style="font-size:12px; color:#64748b; margin-top:2px;">
+                                                PNG with transparency, JPG or WebP up to 5 MB. Appears in top header banner & watermark.
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="prod-logo-actions">
+                                        <label class="btn-upload-file">
+                                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                                            <span>Upload New Logo</span>
+                                            <input type="file" name="custom_icon" id="customIconInput" accept="image/png,image/jpeg,image/webp" onchange="previewLogo(this)">
+                                        </label>
+
+                                        <?php if ($cfg['icon_path'] !== 'assets/motherland-icon.png'): ?>
+                                            <button type="submit" name="reset_icon" value="1" class="action-btn-pill danger" style="padding:8px 14px;">
+                                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+                                                <span>Reset to Default</span>
+                                            </button>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ========================================================= -->
+                    <!-- CARD 2: PAPER FORMAT, ORIENTATION & MARGINS               -->
+                    <!-- ========================================================= -->
+                    <div class="prod-card">
+                        <div class="prod-card-head">
+                            <div class="prod-card-title-wrap">
+                                <div class="prod-card-icon-box blue">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                        <polyline points="14 2 14 8 20 8"></polyline>
+                                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                                        <polyline points="10 9 9 9 8 9"></polyline>
+                                    </svg>
+                                </div>
+                                <div class="prod-card-headings">
+                                    <h3>2. Paper Format, Orientation & Precise Margins</h3>
+                                    <p>Select paper size standard (A4, A5, Letter) and fine-tune printer edge margins</p>
+                                </div>
+                            </div>
+                            <span class="prod-badge-tag" style="background:#e0f2fe; color:#0284c7;">PAGE SETUP</span>
+                        </div>
+
+                        <div class="prod-grid">
+                            <div class="prod-field">
+                                <label class="prod-label">Paper Size Standard</label>
+                                <select name="page_size" id="page_size_select" class="prod-select" onchange="toggleCustomDimensions(this.value)">
+                                    <?php foreach ($paperPresets as $k => $preset): ?>
+                                        <option value="<?= e($k) ?>" <?= ($pageConfig['pageSize'] ?? 'A4') === $k ? 'selected' : '' ?>>
+                                            <?= e($preset['name']) ?> (<?= $preset['width'] ?> × <?= $preset['height'] ?> <?= $preset['unit'] ?>)
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+
+                            <div class="prod-field">
+                                <label class="prod-label">Print Orientation</label>
+                                <select name="orientation" class="prod-select">
+                                    <option value="portrait" <?= ($pageConfig['orientation'] ?? 'portrait') === 'portrait' ? 'selected' : '' ?>>Portrait (Vertical / Standard)</option>
+                                    <option value="landscape" <?= ($pageConfig['orientation'] ?? 'portrait') === 'landscape' ? 'selected' : '' ?>>Landscape (Horizontal)</option>
+                                </select>
+                            </div>
+
+                            <!-- Custom Dimensions (Revealed when Custom selected) -->
+                            <div id="customDimensionsPanel" class="prod-field span-2" style="display: <?= ($pageConfig['pageSize'] ?? '') === 'Custom' ? 'block' : 'none' ?>; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:16px;">
+                                <div style="font-size:12.5px; font-weight:700; color:#334155; margin-bottom:10px;">Custom Sheet Dimensions</div>
+                                <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:12px;">
+                                    <div>
+                                        <label class="prod-label">Width</label>
+                                        <input type="number" step="0.5" name="page_width" class="prod-input" value="<?= (float)($pageConfig['width'] ?? 210) ?>">
+                                    </div>
+                                    <div>
+                                        <label class="prod-label">Height</label>
+                                        <input type="number" step="0.5" name="page_height" class="prod-input" value="<?= (float)($pageConfig['height'] ?? 297) ?>">
+                                    </div>
+                                    <div>
+                                        <label class="prod-label">Measurement Unit</label>
+                                        <select name="page_unit" class="prod-select">
+                                            <option value="mm" <?= ($pageConfig['unit'] ?? 'mm') === 'mm' ? 'selected' : '' ?>>Millimeters (mm)</option>
+                                            <option value="cm" <?= ($pageConfig['unit'] ?? '') === 'cm' ? 'selected' : '' ?>>Centimeters (cm)</option>
+                                            <option value="in" <?= ($pageConfig['unit'] ?? '') === 'in' ? 'selected' : '' ?>>Inches (in)</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Margin Controller -->
+                            <div class="prod-field span-2">
+                                <div class="margin-control-panel">
+                                    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+                                        <span style="font-size:13px; font-weight:700; color:#1e293b;">4-Sided Print Margins (mm)</span>
+                                        <span style="font-size:12px; color:#64748b;">Calibrate laser and thermal printer bleed edges</span>
+                                    </div>
+                                    <div class="margin-grid">
+                                        <div class="margin-item">
+                                            <label>
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+                                                Top Margin
+                                            </label>
+                                            <input type="number" step="0.5" name="margin_top" value="<?= (float)($pageConfig['marginTop'] ?? 6) ?>">
+                                        </div>
+                                        <div class="margin-item">
+                                            <label>
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+                                                Right Margin
+                                            </label>
+                                            <input type="number" step="0.5" name="margin_right" value="<?= (float)($pageConfig['marginRight'] ?? 12) ?>">
+                                        </div>
+                                        <div class="margin-item">
+                                            <label>
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg>
+                                                Bottom Margin
+                                            </label>
+                                            <input type="number" step="0.5" name="margin_bottom" value="<?= (float)($pageConfig['marginBottom'] ?? 6) ?>">
+                                        </div>
+                                        <div class="margin-item">
+                                            <label>
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+                                                Left Margin
+                                            </label>
+                                            <input type="number" step="0.5" name="margin_left" value="<?= (float)($pageConfig['marginLeft'] ?? 12) ?>">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ========================================================= -->
+                    <!-- CARD 3: COLOR THEMES & VISUAL ACCENTS                     -->
+                    <!-- ========================================================= -->
+                    <div class="prod-card">
+                        <div class="prod-card-head">
+                            <div class="prod-card-title-wrap">
+                                <div class="prod-card-icon-box purple">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="13.5" cy="6.5" r=".5"></circle>
+                                        <circle cx="17.5" cy="10.5" r=".5"></circle>
+                                        <circle cx="8.5" cy="7.5" r=".5"></circle>
+                                        <circle cx="6.5" cy="12.5" r=".5"></circle>
+                                        <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.563-2.512 5.563-5.563C22 6.5 17.5 2 12 2z"></path>
+                                    </svg>
+                                </div>
+                                <div class="prod-card-headings">
+                                    <h3>3. Color Themes & Visual Accents</h3>
+                                    <p>Select healthcare color presets or fine-tune exact hex color codes for crisp printing</p>
+                                </div>
+                            </div>
+                            <span class="prod-badge-tag" style="background:#f3e8ff; color:#7e22ce;">PALETTE</span>
+                        </div>
+
+                        <!-- Hidden select for form submission synced with visual cards -->
+                        <input type="hidden" name="theme_preset" id="theme_preset_input" value="<?= e($activeThemeKey) ?>">
+
+                        <!-- Visual Theme Presets Grid -->
+                        <div style="font-size:12.5px; font-weight:700; color:#334155; margin-bottom:10px;">Select Curated Medical Palette:</div>
+                        <div class="theme-swatch-grid">
+                            <?php foreach ($themePresets as $k => $tp): 
+                                $isActive = ($activeThemeKey === $k);
+                            ?>
+                                <div class="theme-swatch-card <?= $isActive ? 'is-active' : '' ?>" onclick="pickThemePreset('<?= e($k) ?>', this)">
+                                    <div class="theme-swatch-dots">
+                                        <span class="swatch-circle" style="background:<?= e($tp['primary']) ?>" title="Primary"></span>
+                                        <span class="swatch-circle" style="background:<?= e($tp['secondary']) ?>" title="Secondary"></span>
+                                        <span class="swatch-circle" style="background:<?= e($tp['accent']) ?>" title="Accent"></span>
+                                        <span class="swatch-circle" style="background:<?= e($tp['border']) ?>" title="Border"></span>
+                                    </div>
+                                    <div class="theme-swatch-name">
+                                        <span><?= e($tp['name']) ?></span>
+                                        <?php if ($isActive): ?>
+                                            <span class="active-check" style="color:#087f6c; font-size:14px;">✓</span>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+
+                        <!-- Fine-Tune Custom Hex Codes -->
+                        <div style="font-size:12.5px; font-weight:700; color:#334155; margin:16px 0 10px;">Fine-Tune Individual Colors:</div>
+                        <div class="color-picker-box">
+                            <div class="color-picker-item">
+                                <span>Primary Header</span>
+                                <div class="color-input-wrap">
+                                    <input type="color" id="color_primary" value="<?= e($tplTheme['primary']) ?>" oninput="syncColorHex(this, 'theme_primary')">
+                                    <input type="text" name="theme_primary" id="theme_primary" value="<?= e($tplTheme['primary']) ?>" oninput="syncColorPicker(this, 'color_primary')">
+                                </div>
+                            </div>
+
+                            <div class="color-picker-item">
+                                <span>Secondary Ribbon</span>
+                                <div class="color-input-wrap">
+                                    <input type="color" id="color_secondary" value="<?= e($tplTheme['secondary']) ?>" oninput="syncColorHex(this, 'theme_secondary')">
+                                    <input type="text" name="theme_secondary" id="theme_secondary" value="<?= e($tplTheme['secondary']) ?>" oninput="syncColorPicker(this, 'color_secondary')">
+                                </div>
+                            </div>
+
+                            <div class="color-picker-item">
+                                <span>Accent Bar</span>
+                                <div class="color-input-wrap">
+                                    <input type="color" id="color_accent" value="<?= e($tplTheme['accent']) ?>" oninput="syncColorHex(this, 'theme_accent')">
+                                    <input type="text" name="theme_accent" id="theme_accent" value="<?= e($tplTheme['accent']) ?>" oninput="syncColorPicker(this, 'color_accent')">
+                                </div>
+                            </div>
+
+                            <div class="color-picker-item">
+                                <span>Table Borders</span>
+                                <div class="color-input-wrap">
+                                    <input type="color" id="color_border" value="<?= e($tplTheme['border']) ?>" oninput="syncColorHex(this, 'theme_border')">
+                                    <input type="text" name="theme_border" id="theme_border" value="<?= e($tplTheme['border']) ?>" oninput="syncColorPicker(this, 'color_border')">
+                                </div>
+                            </div>
+
+                            <div class="color-picker-item">
+                                <span>Section Headings</span>
+                                <div class="color-input-wrap">
+                                    <input type="color" id="color_heading" value="<?= e($tplTheme['heading']) ?>" oninput="syncColorHex(this, 'theme_heading')">
+                                    <input type="text" name="theme_heading" id="theme_heading" value="<?= e($tplTheme['heading']) ?>" oninput="syncColorPicker(this, 'color_heading')">
+                                </div>
+                            </div>
+
+                            <div class="color-picker-item">
+                                <span>Text Color</span>
+                                <div class="color-input-wrap">
+                                    <input type="color" id="color_text" value="<?= e($tplTheme['text']) ?>" oninput="syncColorHex(this, 'theme_text')">
+                                    <input type="text" name="theme_text" id="theme_text" value="<?= e($tplTheme['text']) ?>" oninput="syncColorPicker(this, 'color_text')">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ========================================================= -->
+                    <!-- CARD 4: DEFAULT PRINT MODE (1 PAGE VS 2 PAGES)           -->
+                    <!-- ========================================================= -->
+                    <div class="prod-card">
+                        <div class="prod-card-head">
+                            <div class="prod-card-title-wrap">
+                                <div class="prod-card-icon-box amber">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                                        <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+                                        <rect x="6" y="14" width="12" height="8"></rect>
+                                    </svg>
+                                </div>
+                                <div class="prod-card-headings">
+                                    <h3>4. Default Print Mode (1 Page vs 2 Pages)</h3>
+                                    <p>Choose the default print output when reception prints an OPD registration slip</p>
+                                </div>
+                            </div>
+                            <span class="prod-badge-tag" style="background:#fef3c7; color:#b45309;">PRINT FLOW</span>
+                        </div>
+
+                        <div class="print-mode-cards">
+                            <label class="print-mode-opt <?= $defaultPrintPages === '1' ? 'is-selected' : '' ?>" onclick="selectPrintMode('1', this)">
+                                <input type="radio" name="default_print_pages" value="1" <?= $defaultPrintPages === '1' ? 'checked' : '' ?>>
+                                <div class="print-mode-desc">
+                                    <strong>1-Page: Fast OPD Registration Slip</strong>
+                                    <p>Single A4 slip containing hospital branding, patient demographics, vitals box, and doctor details. Recommended for standard quick check-ins.</p>
+                                    <span class="badge-tag-pill code" style="margin-top:8px; display:inline-block;">RECOMMENDED FOR MOST HOSPITALS</span>
+                                </div>
+                            </label>
+
+                            <label class="print-mode-opt <?= $defaultPrintPages === '2' ? 'is-selected' : '' ?>" onclick="selectPrintMode('2', this)">
+                                <input type="radio" name="default_print_pages" value="2" <?= $defaultPrintPages === '2' ? 'checked' : '' ?>>
+                                <div class="print-mode-desc">
+                                    <strong>2-Pages: Slip + Blank Consultation Sheet</strong>
+                                    <p>Page 1 prints registration slip; Page 2 prints a full blank watermarked consultation paper for doctor's handwritten clinical history and examination.</p>
+                                    <span class="badge-tag-pill default" style="margin-top:8px; display:inline-block;">DETAILED CLINICAL NOTES</span>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- ========================================================= -->
+                    <!-- CARD 5: WATERMARK & BACKGROUND ACCENT                     -->
+                    <!-- ========================================================= -->
+                    <div class="prod-card">
+                        <div class="prod-card-head">
+                            <div class="prod-card-title-wrap">
+                                <div class="prod-card-icon-box sky">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path>
+                                    </svg>
+                                </div>
+                                <div class="prod-card-headings">
+                                    <h3>5. Security Watermark & Header Accent Bar</h3>
+                                    <p>Control background hospital logo watermark transparency and positioning</p>
+                                </div>
+                            </div>
+                            <span class="prod-badge-tag" style="background:#e0f2fe; color:#0369a1;">WATERMARK</span>
+                        </div>
+
+                        <div class="prod-grid">
+                            <!-- Watermark Master Toggle -->
+                            <div class="prod-field span-2">
+                                <label class="ios-toggle-wrap">
+                                    <div class="ios-toggle-left">
+                                        <span class="ios-toggle-title">Enable Background Logo Watermark</span>
+                                        <span class="ios-toggle-desc">Renders a subtle, non-intrusive hospital logo watermark behind doctor consultation notes</span>
+                                    </div>
+                                    <div class="ios-switch">
+                                        <input type="checkbox" name="show_watermark" value="1" <?= !empty($cfg['show_watermark']) ? 'checked' : '' ?>>
+                                        <span class="ios-slider"></span>
+                                    </div>
+                                </label>
+                            </div>
+
+                            <div class="prod-field">
+                                <label class="prod-label">Watermark Position on Paper</label>
+                                <select name="watermark_position" class="prod-select">
+                                    <option value="bottom-right" <?= ($cfg['watermark_position'] ?? '') === 'bottom-right' ? 'selected' : '' ?>>Bottom Right (Standard)</option>
+                                    <option value="center" <?= ($cfg['watermark_position'] ?? '') === 'center' ? 'selected' : '' ?>>Center of Page</option>
+                                    <option value="top-right" <?= ($cfg['watermark_position'] ?? '') === 'top-right' ? 'selected' : '' ?>>Top Right Corner</option>
+                                </select>
+                            </div>
+
+                            <div class="prod-field">
+                                <label class="prod-label">
+                                    <span>Watermark Opacity</span>
+                                    <span class="slider-badge-val" id="wm_op_badge"><?= $wmOpacityPct ?>%</span>
+                                </label>
+                                <div class="slider-container">
+                                    <input type="range" name="watermark_opacity" min="2" max="30" value="<?= $wmOpacityPct ?>" oninput="document.getElementById('wm_op_badge').textContent = this.value + '%'">
+                                </div>
+                                <small style="color:#64748b; font-size:11.5px; margin-top:3px;">Recommended: 5% - 8% for clean laser printer legibility.</small>
+                            </div>
+
+                            <div class="prod-field">
+                                <label class="prod-label">
+                                    <span>Watermark Size (px)</span>
+                                    <span class="slider-badge-val" id="wm_sz_badge"><?= $wmSizeVal ?> px</span>
+                                </label>
+                                <div class="slider-container">
+                                    <input type="range" name="watermark_size" min="40" max="180" value="<?= $wmSizeVal ?>" oninput="document.getElementById('wm_sz_badge').textContent = this.value + ' px'">
+                                </div>
+                            </div>
+
+                            <div class="prod-field">
+                                <label class="prod-label">
+                                    <span>Accent Bar Height (px)</span>
+                                    <span class="slider-badge-val" id="acc_ht_badge"><?= $accentHeightVal ?> px</span>
+                                </label>
+                                <div class="slider-container">
+                                    <input type="range" name="accent_height" min="15" max="60" value="<?= $accentHeightVal ?>" oninput="document.getElementById('acc_ht_badge').textContent = this.value + ' px'">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ========================================================= -->
+                    <!-- CARD 6: PATIENT INFORMATION FIELDS & CUSTOM LABELS        -->
+                    <!-- ========================================================= -->
+                    <div class="prod-card">
+                        <div class="prod-card-head">
+                            <div class="prod-card-title-wrap">
+                                <div class="prod-card-icon-box green">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+                                        <circle cx="9" cy="7" r="4"></circle>
+                                        <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
+                                        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                                    </svg>
+                                </div>
+                                <div class="prod-card-headings">
+                                    <h3>6. Patient Information Fields & Custom Labels</h3>
+                                    <p>Toggle field visibility on printed slip and customize exact label names</p>
+                                </div>
+                            </div>
+                            <span class="prod-badge-tag" style="background:#dcfce7; color:#15803d;">DEMOGRAPHICS</span>
+                        </div>
+
+                        <div class="field-toggle-grid">
+                            <?php
+                            $metaFields = [
+                                'uhid' => ['UHID', 'lbl_uhid', 'show_uhid'],
+                                'name' => ['Patient Name', 'lbl_name', 'show_name'],
+                                'age_sex' => ['Age / Sex', 'lbl_age_sex', 'show_age_sex'],
+                                'guardian' => ['Guardian / S/O / D/O', 'lbl_guardian', 'show_guardian'],
+                                'contact' => ['Contact Number', 'lbl_contact', 'show_contact'],
+                                'address' => ['Address', 'lbl_address', 'show_address'],
+                                'bill' => ['Bill Number', 'lbl_bill', 'show_bill'],
+                                'date' => ['Visit Date & Time', 'lbl_date', 'show_date'],
+                                'panel' => ['Billing Panel / TPA', 'lbl_panel', 'show_panel'],
+                                'dept' => ['Doctor Department', 'lbl_dept', 'show_dept'],
+                                'room' => ['Room / Cabin No', 'lbl_room', 'show_room'],
+                                'app' => ['Appointment Number', 'lbl_app', 'show_app'],
+                            ];
+                            foreach ($metaFields as $fKey => $fMeta):
+                            ?>
+                                <div class="field-micro-card">
+                                    <div class="input-col">
+                                        <span><?= e($fMeta[0]) ?></span>
+                                        <input type="text" name="<?= $fMeta[1] ?>" value="<?= e($cfg[$fMeta[1]] ?? '') ?>" placeholder="<?= e($fMeta[0]) ?>">
+                                    </div>
+                                    <div class="ios-switch" title="Toggle visibility on print slip">
+                                        <input type="checkbox" name="<?= $fMeta[2] ?>" value="1" <?= !empty($cfg[$fMeta[2]]) ? 'checked' : '' ?>>
+                                        <span class="ios-slider"></span>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+
+                    <!-- ========================================================= -->
+                    <!-- CARD 7: CLINICAL VITALS TABLE                             -->
+                    <!-- ========================================================= -->
+                    <div class="prod-card">
+                        <div class="prod-card-head">
+                            <div class="prod-card-title-wrap">
+                                <div class="prod-card-icon-box red">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+                                    </svg>
+                                </div>
+                                <div class="prod-card-headings">
+                                    <h3>7. Clinical Vitals Table & Measurement Units</h3>
+                                    <p>Configure patient vitals table parameters, custom headers, and measurement units</p>
+                                </div>
+                            </div>
+                            <span class="prod-badge-tag" style="background:#fee2e2; color:#b91c1c;">VITALS</span>
+                        </div>
+
+                        <!-- Vitals Master Toggle -->
+                        <div style="margin-bottom:16px;">
+                            <label class="ios-toggle-wrap">
+                                <div class="ios-toggle-left">
+                                    <span class="ios-toggle-title">Show Clinical Vitals Table on Consultation Slip</span>
+                                    <span class="ios-toggle-desc">Displays a dedicated 8-parameter vitals grid (BP, Pulse, Temp, Weight, Height, BMI, Allergies, Pain)</span>
+                                </div>
+                                <div class="ios-switch">
+                                    <input type="checkbox" name="show_vitals" value="1" <?= !empty($cfg['show_vitals']) ? 'checked' : '' ?>>
+                                    <span class="ios-slider"></span>
+                                </div>
+                            </label>
+                        </div>
+
+                        <div class="prod-grid cols-2">
+                            <div class="vital-micro-card">
+                                <span class="param-name">Height</span>
+                                <input type="text" name="lbl_height" class="prod-input param-label-in" value="<?= e($cfg['lbl_height']) ?>" placeholder="Label">
+                                <input type="text" name="unit_height" class="prod-input param-unit-in" value="<?= e($cfg['unit_height']) ?>" placeholder="Unit">
+                                <div class="ios-switch">
+                                    <input type="checkbox" name="show_vital_height" value="1" <?= !empty($cfg['show_vital_height']) ? 'checked' : '' ?>>
+                                    <span class="ios-slider"></span>
+                                </div>
+                            </div>
+
+                            <div class="vital-micro-card">
+                                <span class="param-name">Weight</span>
+                                <input type="text" name="lbl_weight" class="prod-input param-label-in" value="<?= e($cfg['lbl_weight']) ?>" placeholder="Label">
+                                <input type="text" name="unit_weight" class="prod-input param-unit-in" value="<?= e($cfg['unit_weight']) ?>" placeholder="Unit">
+                                <div class="ios-switch">
+                                    <input type="checkbox" name="show_vital_weight" value="1" <?= !empty($cfg['show_vital_weight']) ? 'checked' : '' ?>>
+                                    <span class="ios-slider"></span>
+                                </div>
+                            </div>
+
+                            <div class="vital-micro-card">
+                                <span class="param-name">Blood Pressure</span>
+                                <input type="text" name="lbl_bp" class="prod-input param-label-in" value="<?= e($cfg['lbl_bp']) ?>" placeholder="Label">
+                                <input type="text" name="unit_bp" class="prod-input param-unit-in" value="<?= e($cfg['unit_bp']) ?>" placeholder="Unit">
+                                <div class="ios-switch">
+                                    <input type="checkbox" name="show_vital_bp" value="1" <?= !empty($cfg['show_vital_bp']) ? 'checked' : '' ?>>
+                                    <span class="ios-slider"></span>
+                                </div>
+                            </div>
+
+                            <div class="vital-micro-card">
+                                <span class="param-name">Pulse Rate</span>
+                                <input type="text" name="lbl_pulse" class="prod-input param-label-in" value="<?= e($cfg['lbl_pulse']) ?>" placeholder="Label">
+                                <input type="text" name="unit_pulse" class="prod-input param-unit-in" value="<?= e($cfg['unit_pulse']) ?>" placeholder="Unit">
+                                <div class="ios-switch">
+                                    <input type="checkbox" name="show_vital_pulse" value="1" <?= !empty($cfg['show_vital_pulse']) ? 'checked' : '' ?>>
+                                    <span class="ios-slider"></span>
+                                </div>
+                            </div>
+
+                            <div class="vital-micro-card">
+                                <span class="param-name">Body Temp</span>
+                                <input type="text" name="lbl_temp" class="prod-input param-label-in" value="<?= e($cfg['lbl_temp']) ?>" placeholder="Label">
+                                <input type="text" name="unit_temp" class="prod-input param-unit-in" value="<?= e($cfg['unit_temp']) ?>" placeholder="Unit">
+                                <div class="ios-switch">
+                                    <input type="checkbox" name="show_vital_temp" value="1" <?= !empty($cfg['show_vital_temp']) ? 'checked' : '' ?>>
+                                    <span class="ios-slider"></span>
+                                </div>
+                            </div>
+
+                            <div class="vital-micro-card">
+                                <span class="param-name">BMI Index</span>
+                                <input type="text" name="lbl_bmi" class="prod-input param-label-in" value="<?= e($cfg['lbl_bmi']) ?>" placeholder="Label">
+                                <span style="width:70px; font-size:12px; color:#94a3b8; text-align:center;">Auto</span>
+                                <div class="ios-switch">
+                                    <input type="checkbox" name="show_vital_bmi" value="1" <?= !empty($cfg['show_vital_bmi']) ? 'checked' : '' ?>>
+                                    <span class="ios-slider"></span>
+                                </div>
+                            </div>
+
+                            <div class="vital-micro-card">
+                                <span class="param-name">Pain Score</span>
+                                <input type="text" name="lbl_pain" class="prod-input param-label-in" value="<?= e($cfg['lbl_pain']) ?>" placeholder="Label">
+                                <span style="width:70px; font-size:12px; color:#94a3b8; text-align:center;">0-10</span>
+                                <div class="ios-switch">
+                                    <input type="checkbox" name="show_vital_pain" value="1" <?= !empty($cfg['show_vital_pain']) ? 'checked' : '' ?>>
+                                    <span class="ios-slider"></span>
+                                </div>
+                            </div>
+
+                            <div class="vital-micro-card">
+                                <span class="param-name">Allergies</span>
+                                <input type="text" name="lbl_allergies" class="prod-input param-label-in" value="<?= e($cfg['lbl_allergies']) ?>" placeholder="Label">
+                                <span style="width:70px; font-size:12px; color:#94a3b8; text-align:center;">Text</span>
+                                <div class="ios-switch">
+                                    <input type="checkbox" name="show_vital_allergies" value="1" <?= !empty($cfg['show_vital_allergies']) ? 'checked' : '' ?>>
+                                    <span class="ios-slider"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ========================================================= -->
+                    <!-- CARD 8: FOOTER CONTACTS, VALIDITY & SIGNATURE             -->
+                    <!-- ========================================================= -->
+                    <div class="prod-card">
+                        <div class="prod-card-head">
+                            <div class="prod-card-title-wrap">
+                                <div class="prod-card-icon-box rose">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                                        <circle cx="12" cy="10" r="3"></circle>
+                                    </svg>
+                                </div>
+                                <div class="prod-card-headings">
+                                    <h3>8. Footer Contacts, Validity Notice & Legal Information</h3>
+                                    <p>Hospital contact numbers, website, emergency landline, and validity note</p>
+                                </div>
+                            </div>
+                            <span class="prod-badge-tag" style="background:#ffe4e6; color:#e11d48;">FOOTER & LEGAL</span>
+                        </div>
+
+                        <div class="prod-grid">
+                            <!-- Validity Note with Presets -->
+                            <div class="prod-field span-2">
+                                <label class="prod-label">Prescription Validity Note</label>
+                                <input type="text" id="validityNoteInput" name="validity_note" class="prod-input" value="<?= e($cfg['validity_note']) ?>" placeholder="e.g. Bill is valid for 3 days Including date of Billing.">
+                                <div class="quick-preset-row">
+                                    <span style="font-size:11.5px; color:#64748b;">Quick Presets:</span>
+                                    <button type="button" class="badge-preset-btn" onclick="setValidityNote('Bill is valid for 3 days Including date of Billing.')">3 Days Valid</button>
+                                    <button type="button" class="badge-preset-btn" onclick="setValidityNote('Bill is valid for 7 days Including date of Billing.')">7 Days Valid</button>
+                                    <button type="button" class="badge-preset-btn" onclick="setValidityNote('Valid for single OPD consultation on billing date only.')">Same Day Only</button>
+                                    <button type="button" class="badge-preset-btn" onclick="setValidityNote('Valid for initial consultation + 1 complimentary follow-up within 5 days.')">5 Days Follow-up</button>
+                                </div>
+                            </div>
+
+                            <!-- Doctor Signature Box -->
+                            <div class="prod-field">
+                                <label class="prod-label">Doctor Signature / Stamp Title</label>
+                                <input type="text" name="lbl_signature" class="prod-input" value="<?= e($cfg['lbl_signature'] ?? "Doctor's Signature / Stamp") ?>" placeholder="Doctor's Signature / Stamp">
+                            </div>
+
+                            <div class="prod-field">
+                                <label class="prod-label">Signature Box Visibility</label>
+                                <label class="ios-toggle-wrap" style="padding:8px 14px;">
+                                    <span class="ios-toggle-title">Show Signature & Stamp Box</span>
+                                    <div class="ios-switch">
+                                        <input type="checkbox" name="show_signature_box" value="1" <?= !empty($cfg['show_signature_box']) ? 'checked' : '' ?>>
+                                        <span class="ios-slider"></span>
+                                    </div>
+                                </label>
+                            </div>
+
+                            <!-- Hospital Physical Address -->
+                            <div class="prod-field span-2">
+                                <label class="prod-label">Hospital Physical Address (Appears in Footer)</label>
+                                <input type="text" name="hospital_address" class="prod-input" value="<?= e($cfg['hospital_address']) ?>" placeholder="e.g. Hospital.: Sector 119, Noida - 201305, U.P., India">
+                            </div>
+
+                            <!-- Reg Office Address -->
+                            <div class="prod-field span-2">
+                                <label class="prod-label">Registered Corporate Office & CIN Number</label>
+                                <textarea name="reg_office" class="prod-textarea" rows="2" placeholder="Reg. Office address, CIN, Registration numbers..."><?= e($cfg['reg_office']) ?></textarea>
+                            </div>
+
+                            <div class="prod-field">
+                                <label class="prod-label">WhatsApp Helpdesk Contact</label>
+                                <input type="tel" name="phone_whatsapp" class="prod-input" value="<?= e($cfg['phone_whatsapp']) ?>" placeholder="+91 99937 77444">
+                            </div>
+
+                            <div class="prod-field">
+                                <label class="prod-label">Emergency Landline / Desk Phone</label>
+                                <input type="tel" name="phone_landline" class="prod-input" value="<?= e($cfg['phone_landline']) ?>" placeholder="+91 120 4154949">
+                            </div>
+
+                            <div class="prod-field">
+                                <label class="prod-label">Official Email Address</label>
+                                <input type="email" name="email" class="prod-input" value="<?= e($cfg['email']) ?>" placeholder="info@motherlandhospital.com">
+                            </div>
+
+                            <div class="prod-field">
+                                <label class="prod-label">Official Hospital Website</label>
+                                <input type="text" name="website" class="prod-input" value="<?= e($cfg['website']) ?>" placeholder="www.motherlandhospital.com">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ============================================================= -->
+                <!-- FLOATING GLASSMORPHIC ACTION DOCK                             -->
+                <!-- ============================================================= -->
+                <div class="sticky-dock-bar">
+                    <div class="dock-left-actions">
+                        <button type="submit" class="btn-dock-save">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                                <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                                <polyline points="7 3 7 8 15 8"></polyline>
+                            </svg>
+                            <span>Save Template Settings</span>
+                        </button>
+
+                        <a href="template_editor.php?template_id=<?= $selectedCodeTpl['id'] ?>" class="btn-dock-link">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M9 3v18"></path></svg>
+                            <span>Open Layout Editor</span>
+                        </a>
+                    </div>
+
+                    <div class="dock-right-actions">
+                        <a href="print_opd.php?template_id=<?= $selectedCodeTpl['id'] ?>&pages=1" target="_blank" class="btn-dock-link preview">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                            <span>Preview 1-Page</span>
+                        </a>
+                        <a href="print_opd.php?template_id=<?= $selectedCodeTpl['id'] ?>&pages=2" target="_blank" class="btn-dock-link preview">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                            <span>Preview 2-Pages</span>
+                        </a>
+                    </div>
+                </div>
+            </form>
+        <?php else: ?>
+            <div class="prod-card" style="text-align:center; padding:50px 20px;">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.8" style="margin:0 auto 16px;">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                </svg>
+                <h3 style="margin:0 0 8px; color:#0f172a;">No Digital Code Template Selected</h3>
+                <p style="color:#64748b; font-size:13.5px; margin:0 0 20px;">Create your first digital vector template or select one from the All Templates tab.</p>
+                <button type="button" class="btn-tpl-create primary" onclick="openCreateCodeModal()" style="margin:0 auto;">
+                    + Create Digital Template
+                </button>
+            </div>
+        <?php endif; ?>
+
+    <!-- ===================================================================== -->
+    <!-- TAB 3: PRE-PRINTED IMAGE TEMPLATES                                    -->
+    <!-- ===================================================================== -->
+    <?php elseif ($activeTab === 'images'): ?>
+        <div class="tpl-cards-grid">
+            <?php foreach ($imageTemplates as $imgTpl): 
+                $isDefault = ((int)$imgTpl['id'] === $defaultTemplateId);
+            ?>
+                <div class="tpl-overview-card <?= $isDefault ? 'is-default' : '' ?> <?= empty($imgTpl['active']) ? 'is-inactive' : '' ?>">
+                    <div>
+                        <div class="card-top-header">
+                            <div style="width:68px; height:88px; background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; overflow:hidden; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                                <img src="<?= e($imgTpl['file_path']) ?>" alt="Thumbnail" style="width:100%; height:100%; object-fit:cover;">
+                            </div>
+                            <div class="card-title-details">
+                                <h3><?= e($imgTpl['name']) ?></h3>
+                                <div class="card-badges-row">
+                                    <span class="badge-tag-pill image">🖼️ Pre-printed Scan</span>
+                                    <?php if ($isDefault): ?>
+                                        <span class="badge-tag-pill default">★ Default Template</span>
+                                    <?php endif; ?>
+                                </div>
+                                <div style="font-size:12px; color:#64748b; margin-top:6px;">
+                                    Resolution: <strong><?= e($imgTpl['width'] . ' × ' . $imgTpl['height']) ?> px</strong>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card-specs-list" style="margin-top:14px;">
+                            <div><span>Layout Position Method:</span> <strong>X/Y Drag & Drop Coordinates</strong></div>
+                            <div><span>Reception Status:</span> <strong style="color:<?= !empty($imgTpl['active']) ? '#15803d' : '#94a3b8' ?>"><?= !empty($imgTpl['active']) ? '● Active' : '○ Disabled' ?></strong></div>
+                        </div>
+                    </div>
+
+                    <div class="card-bottom-actions">
+                        <a href="template_editor.php?template_id=<?= $imgTpl['id'] ?>" class="action-btn-pill primary">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M9 3v18"></path></svg>
+                            <span>Open Layout Editor &rarr;</span>
+                        </a>
+
+                        <div style="display:flex; gap:6px; align-items:center;">
+                            <?php if (!$isDefault): ?>
+                                <form method="post" action="templates.php?tab=images" style="display:inline;">
+                                    <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                                    <input type="hidden" name="set_default_id" value="<?= $imgTpl['id'] ?>">
+                                    <button type="submit" class="action-btn-pill">Make Default</button>
+                                </form>
+                            <?php endif; ?>
+
+                            <form method="post" action="templates.php?tab=images" style="display:inline;">
+                                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                                <input type="hidden" name="toggle_id" value="<?= $imgTpl['id'] ?>">
+                                <button type="submit" class="action-btn-pill"><?= !empty($imgTpl['active']) ? 'Block' : 'Activate' ?></button>
+                            </form>
+
+                            <?php if (!$isDefault): ?>
+                                <form method="post" action="templates.php?tab=images" style="display:inline;" onsubmit="return confirm('Delete this scanned template?');">
+                                    <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                                    <input type="hidden" name="action" value="delete_template">
+                                    <input type="hidden" name="id" value="<?= $imgTpl['id'] ?>">
+                                    <button type="submit" class="action-btn-pill danger">Delete</button>
+                                </form>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+
             <?php if (empty($imageTemplates)): ?>
-                <div class="empty">No scanned image templates uploaded.</div>
+                <div class="prod-card span-2" style="text-align:center; padding:50px 20px;">
+                    <h3 style="margin:0 0 8px; color:#0f172a;">No Pre-Printed Image Templates</h3>
+                    <p style="color:#64748b; font-size:13px; margin:0 0 20px;">Upload a straight flatbed photo/scan of your physical prescription pad to print text directly onto pre-printed blank lines.</p>
+                    <button type="button" class="btn-tpl-create primary" onclick="openUploadImageModal()" style="margin:0 auto;">
+                        + Upload First Image Template
+                    </button>
+                </div>
             <?php endif; ?>
         </div>
-    </section>
+    <?php endif; ?>
 </div>
+
+<!-- ========================================================================= -->
+<!-- MODAL 1: Create Digital Code Template                                    -->
+<!-- ========================================================================= -->
+<div id="createCodeModal" class="tpl-modal-backdrop" style="display:none;" role="dialog" aria-modal="true">
+    <div class="tpl-modal-box">
+        <div class="tpl-modal-header">
+            <h3>Create Digital Code Template</h3>
+            <button type="button" class="btn-modal-close-icon" onclick="closeCreateCodeModal()">&times;</button>
+        </div>
+        <form method="post" action="templates.php">
+            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+            <input type="hidden" name="action" value="create_code_template">
+
+            <div class="tpl-modal-body">
+                <div class="prod-field">
+                    <label class="prod-label" for="codeTplName">Template Name <span style="color:#ef4444;">*</span></label>
+                    <input type="text" name="name" id="codeTplName" class="prod-input" placeholder="e.g. City Care Digital OPD Slip" required>
+                </div>
+
+                <div class="prod-field">
+                    <label class="prod-label" for="codeTplPaper">Paper Size Format</label>
+                    <select name="page_size" id="codeTplPaper" class="prod-select">
+                        <option value="A4" selected>A4 (210 × 297 mm) — Standard Hospital Size</option>
+                        <option value="A5">A5 (148 × 210 mm) — Compact Prescription Size</option>
+                        <option value="Letter">US Letter (8.5 × 11 in)</option>
+                    </select>
+                </div>
+
+                <div class="prod-field">
+                    <label class="prod-label" for="codeTplTheme">Color Theme Palette</label>
+                    <select name="theme_preset" id="codeTplTheme" class="prod-select">
+                        <option value="green" selected>Mint Forest Green (Healthcare Default)</option>
+                        <option value="blue">Royal Sapphire Blue</option>
+                        <option value="crimson">Rose Crimson Red</option>
+                        <option value="violet">Royal Amethyst Purple</option>
+                        <option value="amber">Warm Medical Amber</option>
+                        <option value="slate">Clinical Slate Monochrome</option>
+                    </select>
+                </div>
+
+                <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px; font-size:12px; color:#475569; line-height:1.5;">
+                    💡 <strong>What is a Digital Code Template?</strong><br>
+                    It automatically renders clean hospital headers, logo, vitals table, doctor info, and patient details with vector clarity. You can customize all colors, margins and 1/2-page options.
+                </div>
+            </div>
+
+            <div class="tpl-modal-footer">
+                <button type="button" class="btn-dock-link" onclick="closeCreateCodeModal()">Cancel</button>
+                <button type="submit" class="btn-tpl-create primary">Create & Customize</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- MODAL 2: Upload Pre-Printed Image Template                               -->
+<!-- ========================================================================= -->
+<div id="uploadImageModal" class="tpl-modal-backdrop" style="display:none;" role="dialog" aria-modal="true">
+    <div class="tpl-modal-box" style="max-width:580px;">
+        <div class="tpl-modal-header">
+            <h3>Upload Pre-Printed Physical Pad Scan</h3>
+            <button type="button" class="btn-modal-close-icon" onclick="closeUploadImageModal()">&times;</button>
+        </div>
+        <form method="post" action="templates.php" enctype="multipart/form-data">
+            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+            <input type="hidden" name="action" value="upload_image_template">
+
+            <div class="tpl-modal-body">
+                <div class="prod-field">
+                    <label class="prod-label" for="imgTplName">Template Name <span style="color:#ef4444;">*</span></label>
+                    <input type="text" name="name" id="imgTplName" class="prod-input" placeholder="e.g. Apollo Hospital A5 Prescription Pad" required>
+                </div>
+
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px;">
+                    <div class="prod-field">
+                        <label class="prod-label" for="imgTplPaper">Stationery Paper Size</label>
+                        <select name="page_size" id="imgTplPaper" class="prod-select" onchange="toggleCustomDimensionsImg(this.value)">
+                            <option value="A4">A4 (210 × 297 mm) — Standard Full Sheet</option>
+                            <option value="A5" selected>A5 (148 × 210 mm) — Standard Hospital Pad (Most Popular)</option>
+                            <option value="Letter">US Letter (8.5 × 11 in)</option>
+                            <option value="Custom">Custom Cut Stationery Size</option>
+                        </select>
+                    </div>
+
+                    <div class="prod-field">
+                        <label class="prod-label" for="imgTplOrientation">Paper Orientation</label>
+                        <select name="orientation" id="imgTplOrientation" class="prod-select">
+                            <option value="portrait" selected>Portrait (Vertical Pad)</option>
+                            <option value="landscape">Landscape (Horizontal Pad)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Custom Dimensions Panel -->
+                <div id="customDimensionsPanelImg" style="display:none; background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:12px;">
+                    <span style="display:block; font-size:12px; font-weight:700; color:#334155; margin-bottom:8px;">Custom Paper Dimensions (Millimeters)</span>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                        <div>
+                            <label style="font-size:11px; color:#64748b; display:block; margin-bottom:2px;">Width (mm)</label>
+                            <input type="number" step="0.5" name="custom_width" value="148" class="prod-input">
+                        </div>
+                        <div>
+                            <label style="font-size:11px; color:#64748b; display:block; margin-bottom:2px;">Height (mm)</label>
+                            <input type="number" step="0.5" name="custom_height" value="210" class="prod-input">
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px;">
+                    <div class="prod-field">
+                        <label class="prod-label" for="imgTplFieldMode">Field Text Format</label>
+                        <select name="field_mode" id="imgTplFieldMode" class="prod-select">
+                            <option value="val_only" selected>Value Only (Recommended for Pre-printed Pads)</option>
+                            <option value="label_val">Label + Value (e.g. "UHID: 1002")</option>
+                        </select>
+                    </div>
+
+                    <div class="prod-field">
+                        <label class="prod-label" for="imgTplFontSize">Default Font Size</label>
+                        <select name="font_size" id="imgTplFontSize" class="prod-select">
+                            <option value="10">10 px — Compact</option>
+                            <option value="11" selected>11 px — Balanced Standard</option>
+                            <option value="12">12 px — Large & Clear</option>
+                            <option value="14">14 px — High Visibility</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="prod-field">
+                    <label class="prod-label" for="imgTplFile">Scanned Pad Image / Photo (JPG, PNG, WEBP) <span style="color:#ef4444;">*</span></label>
+                    <input type="file" name="template_file" id="imgTplFile" accept="image/jpeg,image/png,image/webp" class="prod-input" onchange="previewPadScan(this)" required>
+                    <small style="color:#64748b; font-size:11.5px; margin-top:3px;">Max 12 MB. Upload a straight flatbed scan or top-down camera photo of your blank printed prescription pad.</small>
+                    
+                    <div id="imgTplPreviewWrap" style="display:none; margin-top:8px; align-items:center; gap:12px; background:#f1f5f9; padding:8px 12px; border-radius:6px;">
+                        <img id="imgTplPreviewImg" src="" alt="Pad Preview" style="max-height:60px; border-radius:4px; border:1px solid #cbd5e1; box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+                        <span style="font-size:12px; color:#475569; font-weight:600;">Image ready for upload</span>
+                    </div>
+                </div>
+
+                <div style="background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px; padding:12px; font-size:12px; color:#0369a1; line-height:1.5;">
+                    💡 <strong>Physical Pad Printing Workflow:</strong><br>
+                    After upload, the Drag-and-Drop Studio opens where you can drag patient fields directly onto your pad's printed lines with millimeter arrow nudge controls. During OPD printing, the printer prints clean text right onto your physical stationery sheets.
+                </div>
+            </div>
+
+            <div class="tpl-modal-footer">
+                <button type="button" class="btn-dock-link" onclick="closeUploadImageModal()">Cancel</button>
+                <button type="submit" class="btn-tpl-create primary">Upload & Open Layout Studio &rarr;</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+// JSON Presets for theme switching
+const THEME_PRESETS = <?= json_encode($themePresets, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+
+function pickThemePreset(presetKey, cardElem) {
+    document.querySelectorAll('.theme-swatch-card').forEach(c => {
+        c.classList.remove('is-active');
+        const check = c.querySelector('.active-check');
+        if (check) check.remove();
+    });
+
+    cardElem.classList.add('is-active');
+    const nameEl = cardElem.querySelector('.theme-swatch-name');
+    if (nameEl && !nameEl.querySelector('.active-check')) {
+        const span = document.createElement('span');
+        span.className = 'active-check';
+        span.style.color = '#087f6c';
+        span.style.fontSize = '14px';
+        span.textContent = '✓';
+        nameEl.appendChild(span);
+    }
+
+    document.getElementById('theme_preset_input').value = presetKey;
+
+    if (THEME_PRESETS[presetKey]) {
+        const tp = THEME_PRESETS[presetKey];
+        updateColorField('theme_primary', 'color_primary', tp.primary);
+        updateColorField('theme_secondary', 'color_secondary', tp.secondary);
+        updateColorField('theme_accent', 'color_accent', tp.accent);
+        updateColorField('theme_border', 'color_border', tp.border);
+        updateColorField('theme_heading', 'color_heading', tp.heading);
+        updateColorField('theme_text', 'color_text', tp.text);
+    }
+}
+
+function updateColorField(textId, pickerId, val) {
+    const textEl = document.getElementById(textId);
+    const pickerEl = document.getElementById(pickerId);
+    if (textEl && val) textEl.value = val;
+    if (pickerEl && val) pickerEl.value = val;
+}
+
+function syncColorHex(colorPicker, textInputId) {
+    const textInput = document.getElementById(textInputId);
+    if (textInput) textInput.value = colorPicker.value;
+}
+
+function syncColorPicker(textInput, colorPickerId) {
+    const colorPicker = document.getElementById(colorPickerId);
+    if (colorPicker && /^#[0-9A-Fa-f]{6}$/.test(textInput.value.trim())) {
+        colorPicker.value = textInput.value.trim();
+    }
+}
+
+function toggleCustomDimensions(val) {
+    const p = document.getElementById('customDimensionsPanel');
+    if (p) p.style.display = (val === 'Custom') ? 'block' : 'none';
+}
+
+function toggleCustomDimensionsImg(val) {
+    const p = document.getElementById('customDimensionsPanelImg');
+    if (p) p.style.display = (val === 'Custom') ? 'block' : 'none';
+}
+
+function previewPadScan(input) {
+    if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const wrap = document.getElementById('imgTplPreviewWrap');
+            const img = document.getElementById('imgTplPreviewImg');
+            if (img) img.src = e.target.result;
+            if (wrap) wrap.style.display = 'flex';
+        };
+        reader.readAsDataURL(input.files[0]);
+    }
+}
+
+function selectPrintMode(val, labelElem) {
+    document.querySelectorAll('.print-mode-opt').forEach(opt => opt.classList.remove('is-selected'));
+    labelElem.classList.add('is-selected');
+    const radio = labelElem.querySelector('input[type="radio"]');
+    if (radio) radio.checked = true;
+}
+
+function setValidityNote(text) {
+    const el = document.getElementById('validityNoteInput');
+    if (el) {
+        el.value = text;
+        el.focus();
+    }
+}
+
+function previewLogo(input) {
+    if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const img = document.getElementById('logoPreviewImg');
+            if (img) img.src = e.target.result;
+        };
+        reader.readAsDataURL(input.files[0]);
+    }
+}
+
+function openCreateCodeModal() {
+    document.getElementById('createCodeModal').style.display = 'flex';
+    document.getElementById('codeTplName').focus();
+}
+
+function closeCreateCodeModal() {
+    document.getElementById('createCodeModal').style.display = 'none';
+}
+
+function openUploadImageModal() {
+    document.getElementById('uploadImageModal').style.display = 'flex';
+    document.getElementById('imgTplName').focus();
+}
+
+function closeUploadImageModal() {
+    document.getElementById('uploadImageModal').style.display = 'none';
+}
+
+window.addEventListener('click', (e) => {
+    const m1 = document.getElementById('createCodeModal');
+    const m2 = document.getElementById('uploadImageModal');
+    if (e.target === m1) closeCreateCodeModal();
+    if (e.target === m2) closeUploadImageModal();
+});
+</script>
 
 <?php require __DIR__ . '/includes/footer.php'; ?>

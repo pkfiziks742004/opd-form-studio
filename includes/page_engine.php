@@ -150,9 +150,9 @@ if (!function_exists('get_paper_presets')) {
         }
 
         // Default margins
-        $marginTop = isset($template['margin_top']) ? (float)$template['margin_top'] : 6.0;
+        $marginTop = isset($template['margin_top']) ? (float)$template['margin_top'] : 3.0;
         $marginRight = isset($template['margin_right']) ? (float)$template['margin_right'] : 12.0;
-        $marginBottom = isset($template['margin_bottom']) ? (float)$template['margin_bottom'] : 6.0;
+        $marginBottom = isset($template['margin_bottom']) ? (float)$template['margin_bottom'] : 3.0;
         $marginLeft = isset($template['margin_left']) ? (float)$template['margin_left'] : 12.0;
 
         // Overlay with page_config_json if present
@@ -259,11 +259,15 @@ if (!function_exists('get_paper_presets')) {
 
 {$pageDeclaration}
 
+body {
+    overflow-x: hidden !important;
+}
+
 /* Unified Universal Sheet Container */
-.motherland-sheet,
-.sheet {
+.motherland-sheet {
     position: relative !important;
     width: {$wStr} !important;
+    max-width: 100% !important;
     height: {$hStr} !important;
     max-height: {$hStr} !important;
     box-sizing: border-box !important;
@@ -279,7 +283,17 @@ if (!function_exists('get_paper_presets')) {
 
 /* Image template dynamic dimensions */
 .sheet {
-    display: block;
+    position: relative !important;
+    width: {$wStr} !important;
+    height: {$hStr} !important;
+    max-height: {$hStr} !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+    margin: 80px auto 40px;
+    background: #ffffff center/100% 100% no-repeat;
+    padding: 0 !important;
+    display: block !important;
+    box-shadow: 0 16px 50px rgba(0,0,0,0.15);
 }
 
 /* Screen Mode Wrapper */
@@ -362,8 +376,7 @@ if (!function_exists('get_paper_presets')) {
         gap: 0 !important;
     }
 
-    .motherland-sheet,
-    .sheet {
+    .motherland-sheet {
         position: relative !important;
         margin: 0 !important;
         box-shadow: none !important;
@@ -382,6 +395,24 @@ if (!function_exists('get_paper_presets')) {
         box-sizing: border-box !important;
         display: flex !important;
         flex-direction: column !important;
+    }
+
+    .sheet {
+        position: relative !important;
+        margin: 0 !important;
+        box-shadow: none !important;
+        border: none !important;
+        width: {$wStr} !important;
+        height: {$hStr} !important;
+        max-height: {$hStr} !important;
+        padding: 0 !important;
+        page-break-after: always !important;
+        break-after: page !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        overflow: hidden !important;
+        box-sizing: border-box !important;
+        display: block !important;
     }
 
     .motherland-sheet:last-child,

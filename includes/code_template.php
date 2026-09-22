@@ -13,6 +13,7 @@ function get_motherland_defaults(): array {
         'doctor_name' => 'Dr. ANVITI SARAF',
         'doctor_dept' => 'IVF',
         'validity_note' => 'Bill is valid for 3 days Including date of Billing.',
+        'font_family' => 'Arial',
         
         // Field Labels
         'lbl_uhid' => 'UHID',
@@ -59,7 +60,7 @@ function get_motherland_defaults(): array {
         // Watermark Controls
         'show_watermark' => '1',
         'watermark_opacity' => '0.06',
-        'watermark_size' => '105',
+        'watermark_size' => '150',
         'watermark_position' => 'bottom-right',
 
         // Print Pages Control
@@ -104,13 +105,25 @@ function get_motherland_defaults(): array {
     ];
 }
 
-function get_motherland_config(): array {
+function get_motherland_config(?array $template = null): array {
     $defs = get_motherland_defaults();
     $cfg = [];
     foreach ($defs as $k => $def) {
         $val = setting('motherland_tpl_' . $k, '');
         $cfg[$k] = ($val !== '') ? $val : $def;
     }
+
+    if ($template && !empty($template['default_layout_json'])) {
+        $data = json_decode((string)$template['default_layout_json'], true);
+        if (is_array($data) && !empty($data['code_config']) && is_array($data['code_config'])) {
+            foreach ($data['code_config'] as $k => $v) {
+                if (array_key_exists($k, $defs) && $v !== null && $v !== '') {
+                    $cfg[$k] = (string)$v;
+                }
+            }
+        }
+    }
+
     return $cfg;
 }
 
@@ -123,14 +136,110 @@ function save_motherland_config(array $data): void {
     }
 }
 
+function get_default_sections(): array {
+    return [
+        'header_mode' => 'digital',       // 'digital' (print hospital brand header) or 'blank' (leave blank margin space for pre-printed letterhead pad)
+        'header_height' => 38.0,          // mm (auto-covered header area height)
+        'patient_top' => 42.0,            // mm (top position / spacing of patient details section)
+        'patient_style' => 'divider',     // 'divider' (clean top/bottom line like Image 2), 'box' (bordered table box), 'none'
+        'patient_density' => 'normal',    // 'compact', 'normal', 'relaxed'
+        'patient_font_size' => 10,        // pt
+        'vitals_top' => 82.0,             // mm
+        'show_vitals' => 1,               // 1 = show vitals table, 0 = hide
+        'footer_mode' => 'digital',       // 'digital' (print 3-col footer) or 'blank' (leave blank margin space for pre-printed letterhead pad)
+        'footer_height' => 28.0,          // mm (auto-covered footer area height)
+        'show_signature' => 1             // 1 = show signature line
+    ];
+}
+
+function get_template_sections(?array $template = null, ?array $layout = null): array {
+    $defs = get_default_sections();
+    $raw = null;
+    if (!empty($layout['sections']) && is_array($layout['sections'])) {
+        $raw = $layout['sections'];
+    } elseif ($template && !empty($template['default_layout_json'])) {
+        $data = json_decode((string)$template['default_layout_json'], true);
+        if (is_array($data) && !empty($data['sections']) && is_array($data['sections'])) {
+            $raw = $data['sections'];
+        }
+    }
+
+    if (!$raw) {
+        return $defs;
+    }
+
+    $res = $defs;
+    // Flat keys
+    foreach ($defs as $k => $def) {
+        if (isset($raw[$k])) {
+            $res[$k] = $raw[$k];
+        }
+    }
+    // Nested structure support
+    if (isset($raw['header']) && is_array($raw['header'])) {
+        if (isset($raw['header']['mode'])) $res['header_mode'] = (string)$raw['header']['mode'];
+        if (isset($raw['header']['height_mm'])) $res['header_height'] = (float)$raw['header']['height_mm'];
+        if (isset($raw['header']['height'])) $res['header_height'] = (float)$raw['header']['height'];
+    }
+    if (isset($raw['patient']) && is_array($raw['patient'])) {
+        if (isset($raw['patient']['top_mm'])) $res['patient_top'] = (float)$raw['patient']['top_mm'];
+        if (isset($raw['patient']['top'])) $res['patient_top'] = (float)$raw['patient']['top'];
+        if (isset($raw['patient']['border_style'])) $res['patient_style'] = (string)$raw['patient']['border_style'];
+        if (isset($raw['patient']['style'])) $res['patient_style'] = (string)$raw['patient']['style'];
+        if (isset($raw['patient']['density'])) $res['patient_density'] = (string)$raw['patient']['density'];
+        if (isset($raw['patient']['font_size_pt'])) $res['patient_font_size'] = (int)$raw['patient']['font_size_pt'];
+        if (isset($raw['patient']['font_size'])) $res['patient_font_size'] = (int)$raw['patient']['font_size'];
+    }
+    if (isset($raw['vitals']) && is_array($raw['vitals'])) {
+        if (isset($raw['vitals']['visible'])) $res['show_vitals'] = $raw['vitals']['visible'] ? 1 : 0;
+        if (isset($raw['vitals']['top_mm'])) $res['vitals_top'] = (float)$raw['vitals']['top_mm'];
+    }
+    if (isset($raw['signature']) && is_array($raw['signature'])) {
+        if (isset($raw['signature']['visible'])) $res['show_signature'] = $raw['signature']['visible'] ? 1 : 0;
+    }
+    if (isset($raw['footer']) && is_array($raw['footer'])) {
+        if (isset($raw['footer']['mode'])) $res['footer_mode'] = (string)$raw['footer']['mode'];
+        if (isset($raw['footer']['height_mm'])) $res['footer_height'] = (float)$raw['footer']['height_mm'];
+        if (isset($raw['footer']['height'])) $res['footer_height'] = (float)$raw['footer']['height'];
+    }
+    return $res;
+}
+
 function render_motherland_opd(array $patient, array $config = [], bool $isPreview = false, array $layout = [], int $pages = 0, ?array $template = null): string {
-    $cfg = array_merge(get_motherland_config(), $config);
+    $rx = [];
+    $extraCfg = [];
+    if (!empty($config) && array_is_list($config)) {
+        $rx = $config;
+    } elseif (!empty($config)) {
+        $extraCfg = $config;
+    }
+    if (empty($rx) && !empty($patient['rx']) && is_array($patient['rx'])) {
+        $rx = $patient['rx'];
+    }
+
+    $cfg = array_merge(get_motherland_config($template), $extraCfg);
+    if (!empty($layout['code_config']) && is_array($layout['code_config'])) {
+        $cfg = array_merge($cfg, $layout['code_config']);
+    }
     $pageConfig = get_template_page_config($template ?: []);
     $theme = get_template_theme($template);
     $themeStyle = generate_theme_style_attr($theme);
     $pageWidthStr = $pageConfig['width'] . $pageConfig['unit'];
     $pageHeightStr = $pageConfig['height'] . $pageConfig['unit'];
     $pagePadStr = "{$pageConfig['marginTop']}{$pageConfig['unit']} {$pageConfig['marginRight']}{$pageConfig['unit']} {$pageConfig['marginBottom']}{$pageConfig['unit']} {$pageConfig['marginLeft']}{$pageConfig['unit']}";
+
+    // Sections & Zone Dimensions (Eka Care production model)
+    $sections = get_template_sections($template, $layout);
+    $headerHeight = (float)($sections['header_height'] ?? 38.0);
+    $patientTop = (float)($sections['patient_top'] ?? 42.0);
+    $footerHeight = (float)($sections['footer_height'] ?? 28.0);
+    $headerMode = $sections['header_mode'] ?? 'digital';
+    $footerMode = $sections['footer_mode'] ?? 'digital';
+    $patientStyle = $sections['patient_style'] ?? 'divider';
+    $patientDensity = $sections['patient_density'] ?? 'normal';
+    $patientFontSize = (int)($sections['patient_font_size'] ?? 10);
+    $showVitals = !empty($sections['show_vitals']);
+    $showSignature = !empty($sections['show_signature']);
 
     // Resolve number of pages
     if ($pages <= 0) {
@@ -178,7 +287,7 @@ function render_motherland_opd(array $patient, array $config = [], bool $isPrevi
     $dept = $patient['doctor_dept'] ?? ($cfg['doctor_dept'] ?? '');
     $room_no = $patient['room_no'] ?? '';
     $app_no = $patient['app_no'] ?? '';
-    $doc_name = !empty($cfg['doctor_name']) ? $cfg['doctor_name'] : 'Dr. ANVITI SARAF';
+    $doc_name = !empty($patient['doctor_name']) ? $patient['doctor_name'] : (!empty($cfg['doctor_name']) ? $cfg['doctor_name'] : 'Dr. ANVITI SARAF');
 
     // Verify icon path and convert to data URI for bulletproof rendering in all environments
     $icon = $cfg['icon_path'];
@@ -215,299 +324,47 @@ function render_motherland_opd(array $patient, array $config = [], bool $isPrevi
     $wmPos = !empty($cfg['watermark_position']) ? $cfg['watermark_position'] : 'bottom-right';
     $accentHeight = !empty($cfg['accent_height']) ? intval($cfg['accent_height']) : 28;
 
+    $fontFamily = !empty($cfg['font_family']) ? $cfg['font_family'] : 'Arial';
+    $fontCss = match($fontFamily) {
+        'Inter' => "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+        'Roboto' => "'Roboto', Arial, sans-serif",
+        'Cambria' => "Cambria, Georgia, serif",
+        'Calibri' => "Calibri, Candara, Segoe, 'Segoe UI', Optima, Arial, sans-serif",
+        'Segoe UI' => "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+        'Times New Roman' => "'Times New Roman', Times, serif",
+        'Outfit' => "'Outfit', 'Segoe UI', sans-serif",
+        default => 'Arial, "Helvetica Neue", Helvetica, sans-serif'
+    };
+
     ob_start();
     ?>
     <!-- ========================================== -->
     <!-- PAGE 1: FULL OPD CONSULTATION PAPER        -->
     <!-- ========================================== -->
-    <div class="motherland-sheet page-1 <?= $isPreview ? 'is-preview' : '' ?>" id="motherlandSheet" style="<?= $themeStyle ?>--ml-wm-opacity: <?= $wmOpacity ?>; --ml-wm-size: <?= $wmSize ?>mm; --ml-page-width: <?= $pageWidthStr ?>; --ml-page-height: <?= $pageHeightStr ?>; --ml-page-padding: <?= $pagePadStr ?>;">
-        <!-- Top Left Accent Bar -->
-        <?php if (!empty($cfg['show_header'])): ?>
-            <div class="ml-top-accent" style="height: <?= $accentHeight ?>mm;"></div>
-        <?php endif; ?>
-
+    <div class="motherland-sheet page-1 <?= $isPreview ? 'is-preview' : '' ?>" id="motherlandSheet" style="<?= $themeStyle ?>--ml-font: <?= $fontCss ?>; --ml-wm-opacity: <?= $wmOpacity ?>; --ml-wm-size: <?= $wmSize ?>mm; --ml-page-width: <?= $pageWidthStr ?>; --ml-page-height: <?= $pageHeightStr ?>; --ml-page-padding: <?= $pagePadStr ?>; --ml-header-height: <?= $headerHeight ?>mm; --ml-footer-height: <?= $footerHeight ?>mm;">
+        
         <!-- Watermark (Customizable Position & Size) -->
-        <?php if (!empty($cfg['show_watermark'])): ?>
-            <div class="ml-watermark ml-wm-<?= htmlspecialchars($wmPos, ENT_QUOTES, 'UTF-8') ?>">
-                <img src="<?= $iconSrc ?>" alt="" class="ml-watermark-img">
-            </div>
-        <?php endif; ?>
-
-        <!-- 1. Header & Logo Area -->
-        <?php if (!empty($cfg['show_header'])): ?>
-            <div class="ml-header-section ml-block" data-block="block_logo" style="<?= $getPos('block_logo') ?>">
-                <div class="ml-brand">
-                    <img src="<?= $iconSrc ?>" alt="Logo" class="ml-brand-icon">
-                    <div class="ml-brand-text">
-                        <div class="ml-hospital-name"><?= htmlspecialchars($cfg['hospital_name'], ENT_QUOTES, 'UTF-8') ?></div>
-                        <div class="ml-hospital-tagline">— <?= htmlspecialchars($cfg['hospital_tagline'], ENT_QUOTES, 'UTF-8') ?> —</div>
-                    </div>
-                </div>
-            </div>
-        <?php endif; ?>
-
-        <!-- 2. Document Title (Centered on its own line below logo) -->
-        <?php if (!empty($cfg['show_title'])): ?>
-            <div class="ml-title-section ml-block" data-block="block_title" style="<?= $getPos('block_title') ?>">
-                <h1 class="ml-title"><?= htmlspecialchars($cfg['doc_title'], ENT_QUOTES, 'UTF-8') ?></h1>
-            </div>
-            <div class="ml-divider-rule"></div>
-        <?php endif; ?>
-
-        <!-- 3. Patient Information & Billing (Two Columns - No Vertical Divider) -->
-        <?php if (!empty($cfg['show_patient_info'])): ?>
-            <div class="ml-meta-grid ml-block" data-block="block_meta" style="<?= $getPos('block_meta') ?>">
-                <!-- Left Column -->
-                <div class="ml-meta-col ml-col-left">
-                    <?php if (!empty($cfg['show_uhid'])): ?>
-                        <div class="ml-field-row" data-field="uhid">
-                            <span class="ml-label"><?= htmlspecialchars($cfg['lbl_uhid'], ENT_QUOTES, 'UTF-8') ?></span>
-                            <span class="ml-sep">:</span>
-                            <span class="ml-value ml-val-uhid"><?= htmlspecialchars($uhid, ENT_QUOTES, 'UTF-8') ?></span>
-                        </div>
-                    <?php endif; ?>
-
-                    <?php if (!empty($cfg['show_name'])): ?>
-                        <div class="ml-field-row" data-field="name">
-                            <span class="ml-label"><?= htmlspecialchars($cfg['lbl_name'], ENT_QUOTES, 'UTF-8') ?></span>
-                            <span class="ml-sep">:</span>
-                            <span class="ml-value ml-val-name font-bold"><?= htmlspecialchars($name, ENT_QUOTES, 'UTF-8') ?></span>
-                        </div>
-                    <?php endif; ?>
-
-                    <?php if (!empty($cfg['show_age_sex'])): ?>
-                        <div class="ml-field-row" data-field="age_sex">
-                            <span class="ml-label"><?= htmlspecialchars($cfg['lbl_age_sex'], ENT_QUOTES, 'UTF-8') ?></span>
-                            <span class="ml-sep">:</span>
-                            <span class="ml-value ml-val-age_sex"><?= htmlspecialchars($age_sex, ENT_QUOTES, 'UTF-8') ?></span>
-                        </div>
-                    <?php endif; ?>
-
-                    <?php if (!empty($cfg['show_guardian'])): ?>
-                        <div class="ml-field-row" data-field="guardian">
-                            <span class="ml-label"><?= htmlspecialchars($cfg['lbl_guardian'], ENT_QUOTES, 'UTF-8') ?></span>
-                            <span class="ml-sep">:</span>
-                            <span class="ml-value ml-val-guardian"><?= htmlspecialchars($guardian, ENT_QUOTES, 'UTF-8') ?></span>
-                        </div>
-                    <?php endif; ?>
-
-                    <?php if (!empty($cfg['show_contact'])): ?>
-                        <div class="ml-field-row" data-field="contact_number">
-                            <span class="ml-label"><?= htmlspecialchars($cfg['lbl_contact'], ENT_QUOTES, 'UTF-8') ?></span>
-                            <span class="ml-sep">:</span>
-                            <span class="ml-value ml-val-contact"><?= htmlspecialchars($contact, ENT_QUOTES, 'UTF-8') ?></span>
-                        </div>
-                    <?php endif; ?>
-
-                    <?php if (!empty($cfg['show_address'])): ?>
-                        <div class="ml-field-row" data-field="address">
-                            <span class="ml-label"><?= htmlspecialchars($cfg['lbl_address'], ENT_QUOTES, 'UTF-8') ?></span>
-                            <span class="ml-sep">:</span>
-                            <span class="ml-value ml-val-address"><?= htmlspecialchars($address, ENT_QUOTES, 'UTF-8') ?></span>
-                        </div>
-                    <?php endif; ?>
-                </div>
-
-                <!-- Right Column -->
-                <div class="ml-meta-col ml-col-right">
-                    <?php if (!empty($cfg['show_bill'])): ?>
-                        <div class="ml-field-row" data-field="bill_no">
-                            <span class="ml-label"><?= htmlspecialchars($cfg['lbl_bill'], ENT_QUOTES, 'UTF-8') ?></span>
-                            <span class="ml-sep">:</span>
-                            <span class="ml-value ml-val-bill"><?= htmlspecialchars($bill_no, ENT_QUOTES, 'UTF-8') ?></span>
-                        </div>
-                    <?php endif; ?>
-
-                    <?php if (!empty($cfg['show_date'])): ?>
-                        <div class="ml-field-row" data-field="date">
-                            <span class="ml-label"><?= htmlspecialchars($cfg['lbl_date'], ENT_QUOTES, 'UTF-8') ?></span>
-                            <span class="ml-sep">:</span>
-                            <span class="ml-value ml-val-date"><?= htmlspecialchars($date_formatted, ENT_QUOTES, 'UTF-8') ?></span>
-                        </div>
-                    <?php endif; ?>
-
-                    <?php if (!empty($cfg['show_panel'])): ?>
-                        <div class="ml-field-row" data-field="panel">
-                            <span class="ml-label"><?= htmlspecialchars($cfg['lbl_panel'], ENT_QUOTES, 'UTF-8') ?></span>
-                            <span class="ml-sep">:</span>
-                            <span class="ml-value ml-val-panel"><?= htmlspecialchars($panel, ENT_QUOTES, 'UTF-8') ?></span>
-                        </div>
-                    <?php endif; ?>
-
-                    <?php if (!empty($cfg['show_dept'])): ?>
-                        <div class="ml-field-row" data-field="doctor_dept">
-                            <span class="ml-label"><?= htmlspecialchars($cfg['lbl_dept'], ENT_QUOTES, 'UTF-8') ?></span>
-                            <span class="ml-sep">:</span>
-                            <span class="ml-value ml-val-dept"><?= htmlspecialchars($dept, ENT_QUOTES, 'UTF-8') ?></span>
-                        </div>
-                    <?php endif; ?>
-
-                    <?php if (!empty($cfg['show_room'])): ?>
-                        <div class="ml-field-row" data-field="room_no">
-                            <span class="ml-label"><?= htmlspecialchars($cfg['lbl_room'], ENT_QUOTES, 'UTF-8') ?></span>
-                            <span class="ml-sep">:</span>
-                            <span class="ml-value ml-val-room"><?= htmlspecialchars($room_no, ENT_QUOTES, 'UTF-8') ?></span>
-                        </div>
-                    <?php endif; ?>
-
-                    <?php if (!empty($cfg['show_app'])): ?>
-                        <div class="ml-field-row" data-field="app_no">
-                            <span class="ml-label"><?= htmlspecialchars($cfg['lbl_app'], ENT_QUOTES, 'UTF-8') ?></span>
-                            <span class="ml-sep">:</span>
-                            <span class="ml-value ml-val-app"><?= htmlspecialchars($app_no, ENT_QUOTES, 'UTF-8') ?></span>
-                        </div>
-                    <?php endif; ?>
-                </div>
-            </div>
-            <div class="ml-divider-rule ml-meta-bottom-rule"></div>
-        <?php endif; ?>
-
-        <!-- 4. Combined Doctor Banner & Vitals Box -->
-        <?php if (!empty($cfg['show_doctor_box']) || !empty($cfg['show_vitals'])): ?>
-            <div class="ml-doctor-vitals-box ml-block" data-block="block_doctor_vitals" style="<?= $getPos('block_doctor_vitals') ?>">
-                <!-- Doctor Name Header -->
-                <?php if (!empty($cfg['show_doctor_box'])): ?>
-                    <div class="ml-doc-header" style="<?= empty($cfg['show_vitals']) ? 'border-bottom:none;' : '' ?>">
-                        <span class="ml-doctor-name"><?= htmlspecialchars($doc_name, ENT_QUOTES, 'UTF-8') ?></span>
-                    </div>
-                <?php endif; ?>
-
-                <!-- Vitals Measurements Table -->
-                <?php if (!empty($cfg['show_vitals'])): ?>
-                    <div class="ml-vitals-table">
-                        <div class="ml-vitals-row ml-vitals-row-1">
-                            <div class="ml-v-cell <?= empty($cfg['show_vital_height']) ? 'ml-hide' : '' ?>">
-                                <span class="v-lbl"><?= htmlspecialchars($cfg['lbl_height'], ENT_QUOTES, 'UTF-8') ?></span>
-                                <span class="v-unit"><?= htmlspecialchars($cfg['unit_height'], ENT_QUOTES, 'UTF-8') ?></span>
-                            </div>
-                            <div class="ml-v-cell <?= empty($cfg['show_vital_weight']) ? 'ml-hide' : '' ?>">
-                                <span class="v-lbl"><?= htmlspecialchars($cfg['lbl_weight'], ENT_QUOTES, 'UTF-8') ?></span>
-                                <span class="v-unit"><?= htmlspecialchars($cfg['unit_weight'], ENT_QUOTES, 'UTF-8') ?></span>
-                            </div>
-                            <div class="ml-v-cell <?= empty($cfg['show_vital_temp']) ? 'ml-hide' : '' ?>">
-                                <span class="v-lbl"><?= htmlspecialchars($cfg['lbl_temp'], ENT_QUOTES, 'UTF-8') ?></span>
-                                <span class="v-unit"><?= htmlspecialchars($cfg['unit_temp'], ENT_QUOTES, 'UTF-8') ?></span>
-                            </div>
-                            <div class="ml-v-cell <?= empty($cfg['show_vital_pulse']) ? 'ml-hide' : '' ?>">
-                                <span class="v-lbl"><?= htmlspecialchars($cfg['lbl_pulse'], ENT_QUOTES, 'UTF-8') ?></span>
-                                <span class="v-unit"><?= htmlspecialchars($cfg['unit_pulse'], ENT_QUOTES, 'UTF-8') ?></span>
-                            </div>
-                        </div>
-                        <div class="ml-vitals-row ml-vitals-row-2">
-                            <div class="ml-v-cell <?= empty($cfg['show_vital_pain']) ? 'ml-hide' : '' ?>">
-                                <span class="v-lbl"><?= htmlspecialchars($cfg['lbl_pain'], ENT_QUOTES, 'UTF-8') ?></span>
-                            </div>
-                            <div class="ml-v-cell <?= empty($cfg['show_vital_allergies']) ? 'ml-hide' : '' ?>">
-                                <span class="v-lbl"><?= htmlspecialchars($cfg['lbl_allergies'], ENT_QUOTES, 'UTF-8') ?></span>
-                            </div>
-                            <div class="ml-v-cell <?= empty($cfg['show_vital_bmi']) ? 'ml-hide' : '' ?>">
-                                <span class="v-lbl"><?= htmlspecialchars($cfg['lbl_bmi'], ENT_QUOTES, 'UTF-8') ?></span>
-                            </div>
-                            <div class="ml-v-cell <?= empty($cfg['show_vital_bp']) ? 'ml-hide' : '' ?>">
-                                <span class="v-lbl"><?= htmlspecialchars($cfg['lbl_bp'], ENT_QUOTES, 'UTF-8') ?></span>
-                                <span class="v-unit"><?= htmlspecialchars($cfg['unit_bp'], ENT_QUOTES, 'UTF-8') ?></span>
-                            </div>
-                        </div>
-                    </div>
-                <?php endif; ?>
-            </div>
-        <?php endif; ?>
-
-        <!-- 5. Consultation Writing Canvas (Doctors Rx & Notes) -->
-        <div class="ml-consultation-body"></div>
-
-        <!-- 6. Bottom Meta Row: Validity Notice & Doctor's Signature -->
-        <div class="ml-bottom-meta-row">
-            <div class="ml-validity-section ml-block" data-block="block_validity" style="<?= $getPos('block_validity') ?>">
-                <?php if (!empty($cfg['show_validity_note'])): ?>
-                    <div class="ml-validity-note">
-                        <strong>Note :</strong> <u><em><?= htmlspecialchars($validity, ENT_QUOTES, 'UTF-8') ?></em></u>
-                    </div>
-                <?php endif; ?>
-            </div>
-            <?php if (!empty($cfg['show_signature_box'])): ?>
-                <div class="ml-sign-section">
-                    <div class="ml-sign-line"></div>
-                    <div class="ml-sign-text"><?= htmlspecialchars($cfg['lbl_signature'] ?? "Doctor's Signature / Stamp", ENT_QUOTES, 'UTF-8') ?></div>
-                </div>
-            <?php endif; ?>
+        <div class="ml-watermark ml-wm-<?= htmlspecialchars($wmPos, ENT_QUOTES, 'UTF-8') ?>" style="<?= empty($cfg['show_watermark']) ? 'display:none;' : '' ?>">
+            <img src="<?= $iconSrc ?>" alt="" class="ml-watermark-img ml-wm-img">
         </div>
 
-        <!-- Footer Separator Line -->
-        <?php if (!empty($cfg['show_footer'])): ?>
-            <div class="ml-divider-rule ml-footer-rule"></div>
-
-            <!-- 7. 3-Column Footer -->
-            <div class="ml-footer ml-block" data-block="block_footer" style="<?= $getPos('block_footer') ?>">
-                <!-- Hospital & Office Address -->
-                <div class="ml-footer-col ml-footer-address">
-                    <div class="ml-footer-item">
-                        <svg class="ml-icon" viewBox="0 0 24 24" fill="var(--ml-icon, #02872e)">
-                            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 0 1 0-5 2.5 2.5 0 0 1 0 5z"/>
-                        </svg>
-                        <div class="ml-footer-text">
-                            <div><?= $hosp_addr ?></div>
-                            <div class="ml-reg-office"><?= $reg_office_nl ?></div>
-                        </div>
+        <!-- 1. Header Zone (Auto-Covered: Digital Brand Header OR Pre-printed Pad Blank Margin) -->
+        <?php if ($isPreview || $headerMode === 'blank'): ?>
+            <div class="ml-header-blank-zone" style="height: <?= $headerHeight ?>mm; <?= ($headerMode !== 'blank') ? 'display:none;' : '' ?>">
+                <?php if ($isPreview): ?>
+                    <div class="ml-zone-blank-tag">
+                        <span>📄 Pre-printed Pad Header Area (<span class="ml-h-val-preview"><?= $headerHeight ?></span>mm Blank Reserved)</span>
                     </div>
-                </div>
-
-                <!-- WhatsApp & Phone Numbers -->
-                <div class="ml-footer-col ml-footer-contact">
-                    <div class="ml-footer-item">
-                        <svg class="ml-icon" viewBox="0 0 24 24" fill="var(--ml-icon, #02872e)">
-                            <path d="M16.75 13.96c.25.13.41.2.46.3.06.11.04.61-.21 1.18-.25.56-1.23 1.1-1.74 1.15-.46.04-1.02.07-2.06-.34-1.49-.59-2.73-1.63-3.69-2.77-.97-1.14-1.72-2.51-1.89-3.08-.18-.58-.02-.9.12-1.17.13-.25.29-.48.44-.65.15-.17.29-.26.39-.26.11 0 .22 0 .32.01.12.01.27-.04.42.33.15.37.52 1.28.57 1.38.05.1.08.22.02.34-.06.12-.13.23-.22.34-.1.1-.2.23-.29.33-.1.1-.21.21-.09.42.12.21.54.89 1.16 1.44.8.71 1.48.93 1.69 1.04.21.11.33.09.45-.05.13-.14.54-.63.69-.85.14-.21.3-.18.5-.1.21.08 1.32.62 1.55.73zM12 2a10 10 0 0 0-8.66 15L2 22l5.17-1.32A10 10 0 1 0 12 2z"/>
-                        </svg>
-                        <span><?= htmlspecialchars($cfg['phone_whatsapp'], ENT_QUOTES, 'UTF-8') ?></span>
-                    </div>
-                    <div class="ml-footer-item">
-                        <svg class="ml-icon" viewBox="0 0 24 24" fill="var(--ml-icon, #02872e)">
-                            <path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 0 0-1.01.24l-2.2 2.2a15.053 15.053 0 0 1-6.59-6.59l2.2-2.21a.96.96 0 0 0 .25-1.01A11.36 11.36 0 0 1 8.57 3.9c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.52c0-.55-.45-1-.99-1z"/>
-                        </svg>
-                        <span><?= htmlspecialchars($cfg['phone_landline'], ENT_QUOTES, 'UTF-8') ?></span>
-                    </div>
-                </div>
-
-                <!-- Email & Website -->
-                <div class="ml-footer-col ml-footer-online">
-                    <div class="ml-footer-item">
-                        <svg class="ml-icon" viewBox="0 0 24 24" fill="var(--ml-icon, #02872e)">
-                            <path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/>
-                        </svg>
-                        <span><?= htmlspecialchars($cfg['email'], ENT_QUOTES, 'UTF-8') ?></span>
-                    </div>
-                    <div class="ml-footer-item">
-                        <svg class="ml-icon" viewBox="0 0 24 24" fill="var(--ml-icon, #02872e)">
-                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
-                        </svg>
-                        <span><?= htmlspecialchars($cfg['website'], ENT_QUOTES, 'UTF-8') ?></span>
-                    </div>
-                    <div class="ml-page-indicator">Page 1 of <?= $pages ?></div>
-                </div>
+                <?php endif; ?>
             </div>
         <?php endif; ?>
-    </div>
 
-    <!-- ========================================================================= -->
-    <!-- PAGE 2: CONTINUATION SHEET (ONLY HEADER & FOOTER, NO PATIENT / VITALS)    -->
-    <!-- ========================================================================= -->
-    <?php if ($pages >= 2 && !$isPreview): ?>
-        <div class="motherland-sheet page-2" style="<?= $themeStyle ?>--ml-wm-opacity: <?= $wmOpacity ?>; --ml-wm-size: <?= $wmSize ?>mm; --ml-page-width: <?= $pageWidthStr ?>; --ml-page-height: <?= $pageHeightStr ?>; --ml-page-padding: <?= $pagePadStr ?>;">
+        <?php if ($isPreview || $headerMode === 'digital'): ?>
             <!-- Top Left Accent Bar -->
-            <?php if (!empty($cfg['show_header'])): ?>
-                <div class="ml-top-accent" style="height: <?= $accentHeight ?>mm;"></div>
-            <?php endif; ?>
+            <div class="ml-top-accent" style="height: <?= (int)$headerHeight ?>mm; <?= ($headerMode !== 'digital' || ($cfg['show_header'] ?? '1') != '1') ? 'display:none;' : '' ?>"></div>
 
-            <!-- Watermark (Customizable Position & Size) -->
-            <?php if (!empty($cfg['show_watermark'])): ?>
-                <div class="ml-watermark ml-wm-<?= htmlspecialchars($wmPos, ENT_QUOTES, 'UTF-8') ?>">
-                    <img src="<?= $iconSrc ?>" alt="" class="ml-watermark-img">
-                </div>
-            <?php endif; ?>
-
-            <!-- Header & Logo Area -->
-            <?php if (!empty($cfg['show_header'])): ?>
-                <div class="ml-header-section">
+            <div class="ml-header-container" style="height: <?= $headerHeight ?>mm; max-height: <?= $headerHeight ?>mm; <?= ($headerMode !== 'digital' || ($cfg['show_header'] ?? '1') != '1') ? 'display:none;' : '' ?>">
+                <div class="ml-header-section ml-block" data-block="block_logo" style="<?= $getPos('block_logo') ?>">
                     <div class="ml-brand">
                         <img src="<?= $iconSrc ?>" alt="Logo" class="ml-brand-icon">
                         <div class="ml-brand-text">
@@ -516,17 +373,228 @@ function render_motherland_opd(array $patient, array $config = [], bool $isPrevi
                         </div>
                     </div>
                 </div>
+            </div>
+        <?php endif; ?>
+
+        <!-- Document Title: Consultation Paper(OPD) (Positioned cleanly directly above patient table) -->
+        <div class="ml-title-section ml-block" data-block="block_title" style="<?= $getPos('block_title') ?> <?= (($cfg['show_title'] ?? '1') != '1') ? 'display:none;' : '' ?>">
+            <h1 class="ml-title"><?= htmlspecialchars($cfg['doc_title'], ENT_QUOTES, 'UTF-8') ?></h1>
+        </div>
+
+        <!-- 2. Patient Demographics Section (Structured 2-Column Table as shown in User Image 2) -->
+        <div class="ml-patient-section ml-style-<?= htmlspecialchars($patientStyle) ?> ml-density-<?= htmlspecialchars($patientDensity) ?>" style="font-size: <?= $patientFontSize ?>pt; <?= (($cfg['show_patient_info'] ?? '1') != '1') ? 'display:none;' : '' ?>">
+            <div class="ml-divider-rule ml-meta-top-rule"></div>
+            <div class="ml-meta-grid ml-block" data-block="block_meta" style="<?= $getPos('block_meta') ?>">
+                    <!-- Left Column -->
+                    <div class="ml-meta-col ml-col-left">
+                        <?php if (!empty($cfg['show_uhid'])): ?>
+                            <div class="ml-field-row" data-field="uhid">
+                                <span class="ml-label"><?= htmlspecialchars($cfg['lbl_uhid'], ENT_QUOTES, 'UTF-8') ?></span>
+                                <span class="ml-sep">:</span>
+                                <span class="ml-value ml-val-uhid font-bold"><?= htmlspecialchars($uhid, ENT_QUOTES, 'UTF-8') ?></span>
+                            </div>
+                        <?php endif; ?>
+
+                        <?php if (!empty($cfg['show_name'])): ?>
+                            <div class="ml-field-row" data-field="name">
+                                <span class="ml-label"><?= htmlspecialchars($cfg['lbl_name'], ENT_QUOTES, 'UTF-8') ?></span>
+                                <span class="ml-sep">:</span>
+                                <span class="ml-value ml-val-name font-bold"><?= htmlspecialchars($name, ENT_QUOTES, 'UTF-8') ?></span>
+                            </div>
+                        <?php endif; ?>
+
+                        <?php if (!empty($cfg['show_age_sex'])): ?>
+                            <div class="ml-field-row" data-field="age_sex">
+                                <span class="ml-label"><?= htmlspecialchars($cfg['lbl_age_sex'], ENT_QUOTES, 'UTF-8') ?></span>
+                                <span class="ml-sep">:</span>
+                                <span class="ml-value ml-val-age_sex"><?= htmlspecialchars($age_sex, ENT_QUOTES, 'UTF-8') ?></span>
+                            </div>
+                        <?php endif; ?>
+
+                        <?php if (!empty($cfg['show_guardian'])): ?>
+                            <div class="ml-field-row" data-field="guardian">
+                                <span class="ml-label"><?= htmlspecialchars($cfg['lbl_guardian'], ENT_QUOTES, 'UTF-8') ?></span>
+                                <span class="ml-sep">:</span>
+                                <span class="ml-value ml-val-guardian"><?= htmlspecialchars($guardian, ENT_QUOTES, 'UTF-8') ?></span>
+                            </div>
+                        <?php endif; ?>
+
+                        <?php if (!empty($cfg['show_contact'])): ?>
+                            <div class="ml-field-row" data-field="contact_number">
+                                <span class="ml-label"><?= htmlspecialchars($cfg['lbl_contact'], ENT_QUOTES, 'UTF-8') ?></span>
+                                <span class="ml-sep">:</span>
+                                <span class="ml-value ml-val-contact"><?= htmlspecialchars($contact, ENT_QUOTES, 'UTF-8') ?></span>
+                            </div>
+                        <?php endif; ?>
+
+                        <?php if (!empty($cfg['show_address'])): ?>
+                            <div class="ml-field-row" data-field="address">
+                                <span class="ml-label"><?= htmlspecialchars($cfg['lbl_address'], ENT_QUOTES, 'UTF-8') ?></span>
+                                <span class="ml-sep">:</span>
+                                <span class="ml-value ml-val-address"><?= htmlspecialchars($address, ENT_QUOTES, 'UTF-8') ?></span>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+
+                    <!-- Right Column -->
+                    <div class="ml-meta-col ml-col-right">
+                        <?php if (!empty($cfg['show_bill'])): ?>
+                            <div class="ml-field-row" data-field="bill_no">
+                                <span class="ml-label"><?= htmlspecialchars($cfg['lbl_bill'], ENT_QUOTES, 'UTF-8') ?></span>
+                                <span class="ml-sep">:</span>
+                                <span class="ml-value ml-val-bill font-bold"><?= htmlspecialchars($bill_no, ENT_QUOTES, 'UTF-8') ?></span>
+                            </div>
+                        <?php endif; ?>
+
+                        <?php if (!empty($cfg['show_date'])): ?>
+                            <div class="ml-field-row" data-field="date">
+                                <span class="ml-label"><?= htmlspecialchars($cfg['lbl_date'], ENT_QUOTES, 'UTF-8') ?></span>
+                                <span class="ml-sep">:</span>
+                                <span class="ml-value ml-val-date"><?= htmlspecialchars($date_formatted, ENT_QUOTES, 'UTF-8') ?></span>
+                            </div>
+                        <?php endif; ?>
+
+                        <?php if (!empty($cfg['show_panel'])): ?>
+                            <div class="ml-field-row" data-field="panel">
+                                <span class="ml-label"><?= htmlspecialchars($cfg['lbl_panel'], ENT_QUOTES, 'UTF-8') ?></span>
+                                <span class="ml-sep">:</span>
+                                <span class="ml-value ml-val-panel"><?= htmlspecialchars($panel, ENT_QUOTES, 'UTF-8') ?></span>
+                            </div>
+                        <?php endif; ?>
+
+                        <?php if (!empty($cfg['show_dept'])): ?>
+                            <div class="ml-field-row" data-field="doctor_dept">
+                                <span class="ml-label"><?= htmlspecialchars($cfg['lbl_dept'], ENT_QUOTES, 'UTF-8') ?></span>
+                                <span class="ml-sep">:</span>
+                                <span class="ml-value ml-val-dept"><?= htmlspecialchars($dept, ENT_QUOTES, 'UTF-8') ?></span>
+                            </div>
+                        <?php endif; ?>
+
+                        <?php if (!empty($cfg['show_room'])): ?>
+                            <div class="ml-field-row" data-field="room_no">
+                                <span class="ml-label"><?= htmlspecialchars($cfg['lbl_room'], ENT_QUOTES, 'UTF-8') ?></span>
+                                <span class="ml-sep">:</span>
+                                <span class="ml-value ml-val-room"><?= htmlspecialchars($room_no, ENT_QUOTES, 'UTF-8') ?></span>
+                            </div>
+                        <?php endif; ?>
+
+                        <?php if (!empty($cfg['show_app'])): ?>
+                            <div class="ml-field-row" data-field="app_no">
+                                <span class="ml-label"><?= htmlspecialchars($cfg['lbl_app'], ENT_QUOTES, 'UTF-8') ?></span>
+                                <span class="ml-sep">:</span>
+                                <span class="ml-value ml-val-app"><?= htmlspecialchars($app_no, ENT_QUOTES, 'UTF-8') ?></span>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <div class="ml-divider-rule ml-meta-bottom-rule"></div>
+            </div>
+
+        <!-- 3. Combined Doctor Banner & Vitals Box -->
+        <div class="ml-doctor-vitals-box ml-block" data-block="block_doctor_vitals" style="<?= $getPos('block_doctor_vitals') ?> <?= (($cfg['show_doctor_box'] ?? '1') != '1') ? 'display:none;' : '' ?>">
+            <!-- Doctor Name Header -->
+            <div class="ml-doc-header" style="<?= (!$showVitals) ? 'border-bottom:none;' : '' ?>">
+                <span class="ml-doctor-name"><?= htmlspecialchars($doc_name ?: 'Dr. ANVITI SARAF', ENT_QUOTES, 'UTF-8') ?></span>
+            </div>
+
+            <!-- Vitals Measurements Table -->
+            <div class="ml-vitals-table" style="<?= $showVitals ? '' : 'display:none;' ?>">
+                <div class="ml-vitals-row ml-vitals-row-1">
+                    <div class="ml-v-cell <?= empty($cfg['show_vital_height']) ? 'ml-hide' : '' ?>">
+                        <span class="v-lbl"><?= htmlspecialchars($cfg['lbl_height'], ENT_QUOTES, 'UTF-8') ?></span>
+                        <span class="v-unit"><?= htmlspecialchars($cfg['unit_height'], ENT_QUOTES, 'UTF-8') ?></span>
+                    </div>
+                    <div class="ml-v-cell <?= empty($cfg['show_vital_weight']) ? 'ml-hide' : '' ?>">
+                        <span class="v-lbl"><?= htmlspecialchars($cfg['lbl_weight'], ENT_QUOTES, 'UTF-8') ?></span>
+                        <span class="v-unit"><?= htmlspecialchars($cfg['unit_weight'], ENT_QUOTES, 'UTF-8') ?></span>
+                    </div>
+                    <div class="ml-v-cell <?= empty($cfg['show_vital_temp']) ? 'ml-hide' : '' ?>">
+                        <span class="v-lbl"><?= htmlspecialchars($cfg['lbl_temp'], ENT_QUOTES, 'UTF-8') ?></span>
+                        <span class="v-unit"><?= htmlspecialchars($cfg['unit_temp'], ENT_QUOTES, 'UTF-8') ?></span>
+                    </div>
+                    <div class="ml-v-cell <?= empty($cfg['show_vital_pulse']) ? 'ml-hide' : '' ?>">
+                        <span class="v-lbl"><?= htmlspecialchars($cfg['lbl_pulse'], ENT_QUOTES, 'UTF-8') ?></span>
+                        <span class="v-unit"><?= htmlspecialchars($cfg['unit_pulse'], ENT_QUOTES, 'UTF-8') ?></span>
+                    </div>
+                </div>
+                <div class="ml-vitals-row ml-vitals-row-2">
+                    <div class="ml-v-cell <?= empty($cfg['show_vital_pain']) ? 'ml-hide' : '' ?>">
+                        <span class="v-lbl"><?= htmlspecialchars($cfg['lbl_pain'], ENT_QUOTES, 'UTF-8') ?></span>
+                    </div>
+                    <div class="ml-v-cell <?= empty($cfg['show_vital_allergies']) ? 'ml-hide' : '' ?>">
+                        <span class="v-lbl"><?= htmlspecialchars($cfg['lbl_allergies'], ENT_QUOTES, 'UTF-8') ?></span>
+                    </div>
+                    <div class="ml-v-cell <?= empty($cfg['show_vital_bmi']) ? 'ml-hide' : '' ?>">
+                        <span class="v-lbl"><?= htmlspecialchars($cfg['lbl_bmi'], ENT_QUOTES, 'UTF-8') ?></span>
+                    </div>
+                    <div class="ml-v-cell <?= empty($cfg['show_vital_bp']) ? 'ml-hide' : '' ?>">
+                        <span class="v-lbl"><?= htmlspecialchars($cfg['lbl_bp'], ENT_QUOTES, 'UTF-8') ?></span>
+                        <span class="v-unit"><?= htmlspecialchars($cfg['unit_bp'], ENT_QUOTES, 'UTF-8') ?></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4. Consultation Writing Canvas (Doctors Rx & Notes) -->
+        <div class="ml-consultation-body">
+            <div class="ml-rx-watermark">℞</div>
+            <?php if (!empty($rx) && is_array($rx)): ?>
+                <table class="ml-rx-table">
+                    <thead>
+                        <tr>
+                            <th style="width:36%;">Medicine / Test</th>
+                            <th style="width:18%;">Dosage</th>
+                            <th style="width:16%;">Timing</th>
+                            <th style="width:14%;">Duration</th>
+                            <th style="width:16%;">Instructions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($rx as $item): ?>
+                            <tr>
+                                <td><strong><?= htmlspecialchars((string)($item['name'] ?? ($item['item'] ?? '')), ENT_QUOTES, 'UTF-8') ?></strong></td>
+                                <td><?= htmlspecialchars((string)($item['dosage'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
+                                <td><?= htmlspecialchars((string)($item['timing'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
+                                <td><?= htmlspecialchars((string)($item['duration'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
+                                <td><?= htmlspecialchars((string)($item['instructions'] ?? ($item['advice'] ?? '')), ENT_QUOTES, 'UTF-8') ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
             <?php endif; ?>
+        </div>
 
-            <!-- Full Blank Continuation Canvas (Only Header & Footer on Page 2) -->
-            <div class="ml-consultation-body ml-consultation-page-2"></div>
+        <!-- 5. Bottom Meta Row: Validity Notice & Doctor's Signature -->
+        <div class="ml-bottom-meta-row">
+            <div class="ml-validity-section ml-block" data-block="block_validity" style="<?= $getPos('block_validity') ?> <?= (($cfg['show_validity_note'] ?? '1') != '1') ? 'display:none;' : '' ?>">
+                <div class="ml-validity-note">
+                    <strong>Note :</strong> <u><em><?= htmlspecialchars($validity ?: 'Bill is valid for 3 days Including date of Billing.', ENT_QUOTES, 'UTF-8') ?></em></u>
+                </div>
+            </div>
+            <div class="ml-sign-section" style="<?= ($showSignature || !empty($cfg['show_signature_box'])) ? '' : 'display:none;' ?>">
+                <div class="ml-sign-line"></div>
+                <div class="ml-sign-text"><?= htmlspecialchars($cfg['lbl_signature'] ?? "Doctor's Signature / Stamp", ENT_QUOTES, 'UTF-8') ?></div>
+            </div>
+        </div>
 
-            <!-- Footer Separator Line -->
-            <?php if (!empty($cfg['show_footer'])): ?>
+        <!-- 6. Footer Zone (Auto-Covered: Digital 3-Column Footer OR Pre-printed Pad Blank Margin) -->
+        <?php if ($isPreview || $footerMode === 'blank'): ?>
+            <div class="ml-footer-blank-zone" style="height: <?= $footerHeight ?>mm; <?= ($footerMode !== 'blank') ? 'display:none;' : '' ?>">
+                <?php if ($isPreview): ?>
+                    <div class="ml-zone-blank-tag">
+                        <span>📄 Pre-printed Pad Footer Area (<span class="ml-f-val-preview"><?= $footerHeight ?></span>mm Blank Reserved)</span>
+                    </div>
+                <?php endif; ?>
+            </div>
+        <?php endif; ?>
+
+        <?php if ($isPreview || $footerMode === 'digital'): ?>
+            <div class="ml-footer-wrapper" style="min-height: <?= $footerHeight ?>mm; <?= ($footerMode !== 'digital' || ($cfg['show_footer'] ?? '1') != '1') ? 'display:none;' : '' ?>">
                 <div class="ml-divider-rule ml-footer-rule"></div>
 
                 <!-- 3-Column Footer -->
-                <div class="ml-footer">
+                <div class="ml-footer ml-block" data-block="block_footer" style="<?= $getPos('block_footer') ?>">
+                    <!-- Hospital & Office Address -->
                     <div class="ml-footer-col ml-footer-address">
                         <div class="ml-footer-item">
                             <svg class="ml-icon" viewBox="0 0 24 24" fill="var(--ml-icon, #02872e)">
@@ -538,6 +606,8 @@ function render_motherland_opd(array $patient, array $config = [], bool $isPrevi
                             </div>
                         </div>
                     </div>
+
+                    <!-- WhatsApp & Phone Numbers -->
                     <div class="ml-footer-col ml-footer-contact">
                         <div class="ml-footer-item">
                             <svg class="ml-icon" viewBox="0 0 24 24" fill="var(--ml-icon, #02872e)">
@@ -552,6 +622,8 @@ function render_motherland_opd(array $patient, array $config = [], bool $isPrevi
                             <span><?= htmlspecialchars($cfg['phone_landline'], ENT_QUOTES, 'UTF-8') ?></span>
                         </div>
                     </div>
+
+                    <!-- Email & Website -->
                     <div class="ml-footer-col ml-footer-online">
                         <div class="ml-footer-item">
                             <svg class="ml-icon" viewBox="0 0 24 24" fill="var(--ml-icon, #02872e)">
@@ -565,9 +637,95 @@ function render_motherland_opd(array $patient, array $config = [], bool $isPrevi
                             </svg>
                             <span><?= htmlspecialchars($cfg['website'], ENT_QUOTES, 'UTF-8') ?></span>
                         </div>
-                        <div class="ml-page-indicator">Page 2 of <?= $pages ?></div>
+                        <div class="ml-page-indicator">Page 1 of <?= $pages ?></div>
                     </div>
                 </div>
+            </div>
+        <?php endif; ?>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- PAGE 2: CONTINUATION SHEET (ONLY HEADER & FOOTER, NO PATIENT / VITALS)    -->
+    <!-- ========================================================================= -->
+    <?php if ($pages >= 2 && !$isPreview): ?>
+        <div class="motherland-sheet page-2" style="<?= $themeStyle ?>--ml-font: <?= $fontCss ?>; --ml-wm-opacity: <?= $wmOpacity ?>; --ml-wm-size: <?= $wmSize ?>mm; --ml-page-width: <?= $pageWidthStr ?>; --ml-page-height: <?= $pageHeightStr ?>; --ml-page-padding: <?= $pagePadStr ?>; --ml-header-height: <?= $headerHeight ?>mm; --ml-footer-height: <?= $footerHeight ?>mm;">
+            <!-- Watermark -->
+            <?php if (!empty($cfg['show_watermark'])): ?>
+                <div class="ml-watermark ml-wm-<?= htmlspecialchars($wmPos, ENT_QUOTES, 'UTF-8') ?>">
+                    <img src="<?= $iconSrc ?>" alt="" class="ml-watermark-img">
+                </div>
+            <?php endif; ?>
+
+            <!-- Header: Blank vs Digital -->
+            <?php if ($headerMode === 'blank'): ?>
+                <div class="ml-header-blank-zone" style="height: <?= $headerHeight ?>mm;"></div>
+            <?php else: ?>
+                <!-- Top Left Accent Bar -->
+                <div class="ml-top-accent" style="height: <?= (int)$headerHeight ?>mm;"></div>
+
+                <div class="ml-header-section">
+                    <div class="ml-brand">
+                        <img src="<?= $iconSrc ?>" alt="Logo" class="ml-brand-icon">
+                        <div class="ml-brand-text">
+                            <div class="ml-hospital-name"><?= htmlspecialchars($cfg['hospital_name'], ENT_QUOTES, 'UTF-8') ?></div>
+                            <div class="ml-hospital-tagline">— <?= htmlspecialchars($cfg['hospital_tagline'], ENT_QUOTES, 'UTF-8') ?> —</div>
+                        </div>
+                    </div>
+                </div>
+            <?php endif; ?>
+
+            <!-- Full Blank Continuation Canvas (Only Header & Footer on Page 2) -->
+            <div class="ml-consultation-body ml-consultation-page-2"></div>
+
+            <!-- Footer: Blank vs Digital -->
+            <?php if ($footerMode === 'blank'): ?>
+                <div class="ml-footer-blank-zone" style="height: <?= $footerHeight ?>mm;"></div>
+            <?php else: ?>
+                <div class="ml-divider-rule ml-footer-rule"></div>
+
+                <!-- 3-Column Footer -->
+                <div class="ml-footer">
+                        <div class="ml-footer-col ml-footer-address">
+                            <div class="ml-footer-item">
+                                <svg class="ml-icon" viewBox="0 0 24 24" fill="var(--ml-icon, #02872e)">
+                                    <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 0 1 0-5 2.5 2.5 0 0 1 0 5z"/>
+                                </svg>
+                                <div class="ml-footer-text">
+                                    <div><?= $hosp_addr ?></div>
+                                    <div class="ml-reg-office"><?= $reg_office_nl ?></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="ml-footer-col ml-footer-contact">
+                            <div class="ml-footer-item">
+                                <svg class="ml-icon" viewBox="0 0 24 24" fill="var(--ml-icon, #02872e)">
+                                    <path d="M16.75 13.96c.25.13.41.2.46.3.06.11.04.61-.21 1.18-.25.56-1.23 1.1-1.74 1.15-.46.04-1.02.07-2.06-.34-1.49-.59-2.73-1.63-3.69-2.77-.97-1.14-1.72-2.51-1.89-3.08-.18-.58-.02-.9.12-1.17.13-.25.29-.48.44-.65.15-.17.29-.26.39-.26.11 0 .22 0 .32.01.12.01.27-.04.42.33.15.37.52 1.28.57 1.38.05.1.08.22.02.34-.06.12-.13.23-.22.34-.1.1-.2.23-.29.33-.1.1-.21.21-.09.42.12.21.54.89 1.16 1.44.8.71 1.48.93 1.69 1.04.21.11.33.09.45-.05.13-.14.54-.63.69-.85.14-.21.3-.18.5-.1.21.08 1.32.62 1.55.73zM12 2a10 10 0 0 0-8.66 15L2 22l5.17-1.32A10 10 0 1 0 12 2z"/>
+                                </svg>
+                                <span><?= htmlspecialchars($cfg['phone_whatsapp'], ENT_QUOTES, 'UTF-8') ?></span>
+                            </div>
+                            <div class="ml-footer-item">
+                                <svg class="ml-icon" viewBox="0 0 24 24" fill="var(--ml-icon, #02872e)">
+                                    <path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 0 0-1.01.24l-2.2 2.2a15.053 15.053 0 0 1-6.59-6.59l2.2-2.21a.96.96 0 0 0 .25-1.01A11.36 11.36 0 0 1 8.57 3.9c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.52c0-.55-.45-1-.99-1z"/>
+                                </svg>
+                                <span><?= htmlspecialchars($cfg['phone_landline'], ENT_QUOTES, 'UTF-8') ?></span>
+                            </div>
+                        </div>
+                        <div class="ml-footer-col ml-footer-online">
+                            <div class="ml-footer-item">
+                                <svg class="ml-icon" viewBox="0 0 24 24" fill="var(--ml-icon, #02872e)">
+                                    <path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/>
+                                </svg>
+                                <span><?= htmlspecialchars($cfg['email'], ENT_QUOTES, 'UTF-8') ?></span>
+                            </div>
+                            <div class="ml-footer-item">
+                                <svg class="ml-icon" viewBox="0 0 24 24" fill="var(--ml-icon, #02872e)">
+                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+                                </svg>
+                                <span><?= htmlspecialchars($cfg['website'], ENT_QUOTES, 'UTF-8') ?></span>
+                            </div>
+                            <div class="ml-page-indicator">Page 2 of <?= $pages ?></div>
+                        </div>
+                    </div>
             <?php endif; ?>
         </div>
     <?php endif; ?>
@@ -587,7 +745,7 @@ function get_motherland_opd_css(): string {
     background: #ffffff;
     box-sizing: border-box;
     padding: var(--ml-page-padding, 6mm 12mm 6mm 12mm);
-    font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
+    font-family: var(--ml-font, Arial, "Helvetica Neue", Helvetica, sans-serif) !important;
     color: #111111;
     overflow: hidden;
     display: flex;
@@ -653,14 +811,14 @@ function get_motherland_opd_css(): string {
     width: 100%;
     height: 100%;
     object-fit: contain;
-    filter: grayscale(10%);
+    filter: none;
 }
 
 /* 3. Brand / Logo Header */
 .ml-header-section {
     display: flex;
     align-items: center;
-    margin-top: 1mm;
+    margin-top: 3.5mm;
     margin-bottom: 3.5mm;
     padding-left: 0;
     z-index: 2;
@@ -704,11 +862,44 @@ function get_motherland_opd_css(): string {
     margin-top: 1.5px;
 }
 
-/* 4. Document Title (Centered on its own line) */
+/* Pre-printed Letterhead Pad Blank Spacing Zones */
+.ml-header-blank-zone {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    box-sizing: border-box;
+}
+
+.ml-footer-blank-zone {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    box-sizing: border-box;
+}
+
+.ml-zone-blank-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 12px;
+    background: #f0fdf4;
+    border: 1.2px dashed #16a34a;
+    border-radius: 4px;
+    font-size: 8.5pt;
+    font-weight: 600;
+    color: #166534;
+    pointer-events: none;
+}
+
+/* 4. Document Title (Centered Consultation Paper OPD - Image 2 Green Style) */
 .ml-title-section {
     text-align: center;
-    margin-top: 5mm;
-    margin-bottom: 2mm;
+    margin-top: 2mm;
+    margin-bottom: 2.5mm;
     z-index: 2;
 }
 
@@ -716,20 +907,26 @@ function get_motherland_opd_css(): string {
     margin: 0;
     font-size: 13.5pt;
     font-weight: 700;
-    color: var(--ml-heading, #111111);
+    color: var(--ml-primary, #00783e);
     letter-spacing: 0.2px;
 }
 
 /* Divider Rules */
 .ml-divider-rule {
     border-top: 1pt solid var(--ml-border, #222222);
-    margin: 1.5mm 0 2.5mm 0;
+    margin: 1.5mm 0 2mm 0;
     width: 100%;
     z-index: 2;
 }
 
+.ml-meta-top-rule {
+    border-top: 1pt solid var(--ml-border, #222222);
+    margin: 1.5mm 0 2mm 0;
+}
+
 .ml-meta-bottom-rule {
-    margin: 2.5mm 0 2.5mm 0;
+    border-top: 1pt solid var(--ml-border, #222222);
+    margin: 2mm 0 2.5mm 0;
 }
 
 .ml-footer-rule {
@@ -737,7 +934,55 @@ function get_motherland_opd_css(): string {
     margin: 2mm 0 3mm 0;
 }
 
-/* 5. Patient Information (2 Columns) */
+/* 5. Patient Information Section (Structured 2 Columns - User Image 2) */
+.ml-patient-section {
+    width: 100%;
+    z-index: 2;
+    box-sizing: border-box;
+}
+
+/* Styles: Divider (Image 2 style), Box, or None */
+.ml-patient-section.ml-style-divider .ml-meta-top-rule {
+    display: block;
+}
+
+.ml-patient-section.ml-style-divider .ml-meta-bottom-rule {
+    display: block;
+}
+
+.ml-patient-section.ml-style-box {
+    border: 1pt solid var(--ml-border, #222222);
+    border-radius: 3px;
+    padding: 2mm 3.5mm;
+    margin: 1.5mm 0 2.5mm 0;
+}
+
+.ml-patient-section.ml-style-box .ml-meta-top-rule,
+.ml-patient-section.ml-style-box .ml-meta-bottom-rule {
+    display: none;
+}
+
+.ml-patient-section.ml-style-none .ml-meta-top-rule,
+.ml-patient-section.ml-style-none .ml-meta-bottom-rule {
+    display: none;
+}
+
+/* Densities: Compact, Normal, Relaxed */
+.ml-patient-section.ml-density-compact .ml-field-row {
+    margin-bottom: 0.7mm;
+    line-height: 1.25;
+}
+
+.ml-patient-section.ml-density-normal .ml-field-row {
+    margin-bottom: 1.2mm;
+    line-height: 1.4;
+}
+
+.ml-patient-section.ml-density-relaxed .ml-field-row {
+    margin-bottom: 1.8mm;
+    line-height: 1.55;
+}
+
 .ml-meta-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -753,31 +998,31 @@ function get_motherland_opd_css(): string {
 }
 
 .ml-col-right {
-    padding-left: 6mm;
+    padding-left: 5mm;
 }
 
 .ml-field-row {
-    display: flex;
+    display: grid;
+    grid-template-columns: 24mm 3mm 1fr;
     align-items: baseline;
-    margin-bottom: 1.2mm;
+    margin-bottom: 1.1mm;
+    line-height: 1.35;
 }
 
 .ml-label {
-    width: 25mm;
+    width: auto;
     font-weight: 500;
     color: var(--ml-label, #222222);
-    flex-shrink: 0;
 }
 
 .ml-col-right .ml-label {
-    width: 28mm;
+    width: auto;
 }
 
 .ml-sep {
-    width: 4mm;
+    width: auto;
     text-align: center;
     font-weight: 500;
-    flex-shrink: 0;
     color: var(--ml-label, #222222);
 }
 
@@ -795,7 +1040,8 @@ function get_motherland_opd_css(): string {
 /* 6. Doctor Banner & Vitals Measurements Table */
 .ml-doctor-vitals-box {
     margin-top: 2.5mm;
-    border: 1.2pt solid var(--ml-border, #222222);
+    border-top: 1.2pt solid var(--ml-border, #555555);
+    border-bottom: 1.2pt solid var(--ml-border, #555555);
     background: #ffffff;
     z-index: 2;
 }
@@ -803,7 +1049,7 @@ function get_motherland_opd_css(): string {
 .ml-doc-header {
     text-align: center;
     padding: 1.2mm 3mm;
-    border-bottom: 1pt solid var(--ml-border, #222222);
+    border-bottom: 1pt solid var(--ml-border, #555555);
     background: #ffffff;
 }
 
@@ -820,8 +1066,8 @@ function get_motherland_opd_css(): string {
 
 .ml-vitals-row {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr 1fr;
-    padding: 1.4mm 3mm;
+    grid-template-columns: repeat(4, 1fr);
+    padding: 0;
 }
 
 .ml-vitals-row-2 {
@@ -832,7 +1078,13 @@ function get_motherland_opd_css(): string {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    padding-right: 3mm;
+    padding: 1.4mm 2.8mm;
+    border-right: none;
+    box-sizing: border-box;
+}
+
+.ml-v-cell:last-child {
+    border-right: none;
 }
 
 .ml-v-cell.ml-hide {
@@ -849,11 +1101,49 @@ function get_motherland_opd_css(): string {
     font-weight: 400;
 }
 
+/* Rx Table when items exist */
+.ml-rx-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 3.5mm;
+    font-size: 8.8pt;
+    color: #111111;
+}
+.ml-rx-table th {
+    border: none;
+    border-bottom: 0.8pt solid var(--ml-border, #555555);
+    background: transparent;
+    color: #111111;
+    font-weight: 700;
+    padding: 1.8mm 2.5mm;
+    text-align: left;
+}
+.ml-rx-table td {
+    border: none;
+    border-bottom: 0.5pt dashed var(--ml-border, #cccccc);
+    padding: 1.8mm 2.5mm;
+    color: #111111;
+}
+
 /* 7. Consultation Writing Area */
 .ml-consultation-body {
     flex: 1 1 auto;
     min-height: 0;
     z-index: 2;
+    position: relative;
+}
+
+.ml-rx-watermark {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 32pt;
+    font-weight: 700;
+    color: var(--ml-primary, #00783e);
+    opacity: 0.15;
+    line-height: 1;
+    margin-top: 2.5mm;
+    margin-left: 1mm;
+    user-select: none;
+    pointer-events: none;
 }
 
 .ml-consultation-page-2 {

@@ -23,7 +23,7 @@ $response = [
 ];
 
 if ($isCode) {
-    $response['html'] = render_motherland_opd([], [], true);
+    $response['html'] = render_motherland_opd([], [], true, $response['layout'], 0, $tpl);
 }
 
 echo json_encode($response);

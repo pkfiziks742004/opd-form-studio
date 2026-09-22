@@ -10,7 +10,7 @@ function patient_payload(int $patientId): ?array {
         'patient_id'=>$p['id'],'uhid'=>$p['uhid'],'name'=>$p['name'],'age'=>$p['age'],'sex'=>$p['sex'],
         'guardian'=>$p['guardian'],'contact_number'=>$p['contact_number'],'address'=>$p['address'],
         'bill_no'=>$p['bill_no'],'visit_date'=>$p['visit_date'],'visit_time'=>$p['visit_time'],
-        'panel'=>$p['panel'],'doctor_dept'=>$p['doctor_dept'],'room_no'=>$p['room_no'],'app_no'=>$p['app_no'],
+        'panel'=>$p['panel'],'doctor_dept'=>$p['doctor_dept'],'doctor_name'=>$p['doctor_name'] ?? '','room_no'=>$p['room_no'],'app_no'=>$p['app_no'],
         'created_by'=>$p['created_by_name'],'created_at'=>$p['created_at'],'updated_at'=>$p['updated_at']
     ];
 }

@@ -170,5 +170,86 @@ if ($action === 'get_detail') {
     exit;
 }
 
+if ($action === 'quick_add_doctor') {
+    require_once __DIR__ . '/includes/doctor_dept.php';
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        echo json_encode(['success' => false, 'message' => 'POST request required']);
+        exit;
+    }
+
+    $name = trim($_POST['name'] ?? '');
+    $deptName = trim($_POST['department_name'] ?? '');
+    $roomNo = trim($_POST['room_no'] ?? '');
+    $qualification = trim($_POST['qualification'] ?? '');
+
+    if ($name === '') {
+        echo json_encode(['success' => false, 'message' => 'Doctor name is required']);
+        exit;
+    }
+    if ($deptName === '') {
+        echo json_encode(['success' => false, 'message' => 'Department is required']);
+        exit;
+    }
+
+    try {
+        $id = save_doctor($name, $deptName, $roomNo, $qualification, '', 0, 1);
+        echo json_encode([
+            'success' => true,
+            'doctor' => [
+                'id' => $id,
+                'name' => $name,
+                'department_name' => $deptName,
+                'room_no' => $roomNo,
+                'qualification' => $qualification
+            ]
+        ]);
+    } catch (Throwable $e) {
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+    }
+    exit;
+}
+
+if ($action === 'quick_add_department') {
+    require_once __DIR__ . '/includes/doctor_dept.php';
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        echo json_encode(['success' => false, 'message' => 'POST request required']);
+        exit;
+    }
+
+    $name = trim($_POST['name'] ?? '');
+    $code = trim($_POST['code'] ?? '');
+
+    if ($name === '') {
+        echo json_encode(['success' => false, 'message' => 'Department name is required']);
+        exit;
+    }
+
+    try {
+        $id = save_department($name, $code, '', 0, 1);
+        echo json_encode([
+            'success' => true,
+            'department' => [
+                'id' => $id,
+                'name' => $name,
+                'code' => $code
+            ]
+        ]);
+    } catch (Throwable $e) {
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+    }
+    exit;
+}
+
+if ($action === 'get_doctors') {
+    require_once __DIR__ . '/includes/doctor_dept.php';
+    $deptName = trim($_GET['dept'] ?? '');
+    $all = get_all_doctors(true);
+    if ($deptName !== '') {
+        $all = array_values(array_filter($all, fn($d) => strcasecmp($d['department_name'], $deptName) === 0));
+    }
+    echo json_encode(['success' => true, 'doctors' => $all]);
+    exit;
+}
+
 echo json_encode(['success' => false, 'message' => 'Invalid action']);
 exit;

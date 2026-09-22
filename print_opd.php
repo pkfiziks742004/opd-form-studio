@@ -7,6 +7,8 @@ $id = (int)($_GET['id'] ?? 0);
 $templateId = (int)($_GET['template_id'] ?? 0);
 $pages = (int)($_GET['pages'] ?? 0);
 $isModal = !empty($_GET['modal']);
+$printBg = !empty($_GET['print_bg']) && $_GET['print_bg'] == '1';
+$hideScanScreen = !empty($_GET['hide_scan']) && $_GET['hide_scan'] == '1';
 
 if ($id > 0) {
     $st = db()->prepare('SELECT * FROM patients WHERE id=?');
@@ -48,7 +50,7 @@ $perm = field_permissions((int)$user['id']);
 $pageConfig = get_template_page_config($tpl);
 $theme = get_template_theme($tpl);
 
-$cfg = get_motherland_config();
+$cfg = get_motherland_config($tpl);
 if ($pages <= 0) {
     if (!empty($cfg['default_print_pages']) && (int)$cfg['default_print_pages'] === 2) {
         $pages = 2;
@@ -189,22 +191,38 @@ $allTemplates = db()->query('SELECT id, name, template_type, file_path FROM temp
             color: #fff;
         }
 
-        /* Legacy Image Template Sheet */
+        /* Pre-Printed Pad Scan Sheet */
         .sheet {
             position: relative;
-            width: 210mm;
-            height: 297mm;
-            margin: 80px auto 30px;
             background: #fff center/100% 100% no-repeat;
             box-shadow: 0 16px 50px rgba(0,0,0,0.15);
             overflow: hidden;
+            box-sizing: border-box;
+        }
+        .sheet.hide-scan {
+            background-image: none !important;
+            background: #ffffff !important;
+            border: 1px dashed #94a3b8;
         }
         .field {
             position: absolute;
             white-space: pre-wrap;
             line-height: 1.15;
             color: #111;
-            font-family: Arial, sans-serif;
+            font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
+            box-sizing: border-box;
+        }
+
+        @media print {
+            <?php if (!$isCode && !$printBg): ?>
+            /* Physical stationery mode: prints text only to prevent toner waste on pre-printed pads */
+            .sheet {
+                background-image: none !important;
+                background: transparent !important;
+                border: none !important;
+                box-shadow: none !important;
+            }
+            <?php endif; ?>
         }
 
         /* Screen Wrapper for Code Template */
@@ -252,9 +270,11 @@ $allTemplates = db()->query('SELECT id, name, template_type, file_path FROM temp
         </div>
         <?php if(count($allTemplates) > 1): ?>
         <select onchange="location='print_opd.php?id=<?= $id ?>&template_id='+this.value+'&pages=<?= $pages ?>'">
-            <?php foreach($allTemplates as $at): ?>
+            <?php foreach($allTemplates as $at): 
+                $isCodeT = is_code_template($at);
+            ?>
             <option value="<?= $at['id'] ?>" <?= (int)$at['id'] === (int)$tpl['id'] ? 'selected' : '' ?>>
-                <?= e($at['name']) ?><?= is_code_template($at) ? ' (Code)' : '' ?>
+                <?= $isCodeT ? '🩺 Digital Code: ' : '🖼️ Uploaded Pad: ' ?><?= e($at['name']) ?>
             </option>
             <?php endforeach; ?>
         </select>
@@ -268,18 +288,34 @@ $allTemplates = db()->query('SELECT id, name, template_type, file_path FROM temp
         </span>
     </div>
     <div class="toolbar-actions">
-        <!-- 1 Page / 2 Pages Toggle -->
-        <div class="page-toggle-group">
-            <a href="print_opd.php?id=<?= $id ?>&template_id=<?= $tpl['id'] ?>&pages=1" class="<?= $pages === 1 ? 'btn-active' : '' ?>" title="Print 1 Page (Prescription only)">1 Page</a>
-            <a href="print_opd.php?id=<?= $id ?>&template_id=<?= $tpl['id'] ?>&pages=2" class="<?= $pages === 2 ? 'btn-active' : '' ?>" title="Print 2 Pages (with consultation notes)">2 Pages</a>
-        </div>
+        <?php if ($isCode): ?>
+            <!-- 1 Page / 2 Pages Toggle for Code Template -->
+            <div class="page-toggle-group">
+                <a href="print_opd.php?id=<?= $id ?>&template_id=<?= $tpl['id'] ?>&pages=1" class="<?= $pages === 1 ? 'btn-active' : '' ?>" title="Print 1 Page (Prescription only)">1 Page</a>
+                <a href="print_opd.php?id=<?= $id ?>&template_id=<?= $tpl['id'] ?>&pages=2" class="<?= $pages === 2 ? 'btn-active' : '' ?>" title="Print 2 Pages (with consultation notes)">2 Pages</a>
+            </div>
+        <?php else: ?>
+            <!-- Pad Scan Tools for Physical Pre-Printed Stationery -->
+            <button type="button" class="btn-toolbar-nav" id="btnToggleScan" onclick="togglePadScan()" title="Show/Hide scanned pad image on screen">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                Pad Scan: <span id="scanStateText"><?= $hideScanScreen ? 'Hidden' : 'Visible' ?></span>
+            </button>
+            <label class="btn-toolbar-nav" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-size:12px;user-select:none;" title="Unchecked = Prints text only for pre-printed pads. Checked = Prints scanned pad image on plain blank paper.">
+                <input type="checkbox" id="chkPrintBg" <?= $printBg ? 'checked' : '' ?> onchange="togglePrintBg(this.checked)" style="accent-color:#10b981;cursor:pointer;margin:0;">
+                <span>Print Scan Bg</span>
+            </label>
+            <a href="template_editor.php?template_id=<?= $tpl['id'] ?>" class="btn-toolbar-white" title="Open Calibration Studio to fine-tune field coordinates">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                Calibrate Pad
+            </a>
+        <?php endif; ?>
 
         <a href="patient_form.php" class="btn-next-patient" title="Register New Patient (Alt+N)">
             + + Register Next Patient
         </a>
         <button class="btn-print-action" onclick="window.print()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
-            Print Slip (<?= $pages ?> Page<?= $pages > 1 ? 's' : '' ?>)
+            <?= $isCode ? "Print Slip ({$pages} Page" . ($pages > 1 ? 's' : '') . ")" : 'Print Pad Slip' ?>
         </button>
         <?php if ($id > 0): ?>
             <a href="patient_profile.php?id=<?= $id ?>" class="btn-toolbar-white" title="View Patient Profile">
@@ -299,6 +335,23 @@ document.addEventListener('keydown', function(e) {
         window.location.href = 'patient_form.php';
     }
 });
+function togglePadScan() {
+    var sheet = document.querySelector('.sheet');
+    if (!sheet) return;
+    sheet.classList.toggle('hide-scan');
+    var isHidden = sheet.classList.contains('hide-scan');
+    var txt = document.getElementById('scanStateText');
+    if (txt) txt.textContent = isHidden ? 'Hidden' : 'Visible';
+}
+function togglePrintBg(checked) {
+    var url = new URL(window.location.href);
+    if (checked) {
+        url.searchParams.set('print_bg', '1');
+    } else {
+        url.searchParams.delete('print_bg');
+    }
+    window.location.href = url.toString();
+}
 </script>
 <?php endif; ?>
 
@@ -307,13 +360,29 @@ document.addEventListener('keydown', function(e) {
         <?= render_motherland_opd($p, [], false, $layout, $pages, $tpl) ?>
     </div>
 <?php else: ?>
-    <div class="sheet" style="background-image:url('<?= e($tpl['file_path']) ?>')">
+    <div class="sheet <?= $hideScanScreen ? 'hide-scan' : '' ?>" style="background-image:url('<?= e($tpl['file_path']) ?>')">
         <?php foreach ($layout as $k => $pos):
-            if (!isset(FIELD_DEFS[$k]) || empty($perm[$k]['visible'])) continue;
+            if (!isset(FIELD_DEFS[$k])) continue;
+            if (isset($pos['visible']) && $pos['visible'] === false) continue;
+            if (empty($perm[$k]['visible'])) continue;
+
             $val = patient_display($p, $k);
+            if ($val === '' || $val === null) $val = '';
+
+            $showLabel = isset($pos['showLabel']) ? (bool)$pos['showLabel'] : false;
+            $labelPrefix = $showLabel ? (FIELD_DEFS[$k] . ': ') : '';
+            $displayText = $labelPrefix . $val;
+
+            $align = in_array($pos['align'] ?? '', ['left', 'center', 'right'], true) ? $pos['align'] : 'left';
+            $fontWeight = in_array((string)($pos['fontWeight'] ?? ''), ['400', '500', '600', '700', '800'], true) ? $pos['fontWeight'] : '500';
+            $color = !empty($pos['color']) ? htmlspecialchars($pos['color']) : '#111827';
+            $fontSize = intval($pos['fontSize'] ?? 12);
+            $width = intval($pos['width'] ?? 220);
+            $x = floatval($pos['x'] ?? 5);
+            $y = floatval($pos['y'] ?? 5);
         ?>
-            <div class="field" style="left:<?= floatval($pos['x'] ?? 5) ?>%;top:<?= floatval($pos['y'] ?? 5) ?>%;font-size:<?= intval($pos['fontSize'] ?? 12) ?>px;width:<?= intval($pos['width'] ?? 220) ?>px;font-weight:<?= e($pos['fontWeight'] ?? '500') ?>">
-                <?= e($val) ?>
+            <div class="field" style="left:<?= $x ?>%;top:<?= $y ?>%;font-size:<?= $fontSize ?>px;width:<?= $width ?>px;font-weight:<?= $fontWeight ?>;text-align:<?= $align ?>;color:<?= $color ?>;">
+                <?= e($displayText) ?>
             </div>
         <?php endforeach; ?>
     </div>

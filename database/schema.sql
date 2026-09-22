@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS patients (
   visit_time TIME NULL,
   panel VARCHAR(120) NULL,
   doctor_dept VARCHAR(160) NULL,
+  doctor_id INT UNSIGNED NULL,
+  doctor_name VARCHAR(160) NULL,
   room_no VARCHAR(60) NULL,
   app_no VARCHAR(60) NULL,
   created_by INT UNSIGNED NULL,
@@ -32,7 +34,37 @@ CREATE TABLE IF NOT EXISTS patients (
   INDEX idx_patients_name(name),
   INDEX idx_patients_bill(bill_no),
   INDEX idx_patients_phone(contact_number),
+  INDEX idx_patients_doc_id(doctor_id),
+  INDEX idx_patients_doc_name(doctor_name),
   CONSTRAINT fk_patients_user FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS departments (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(140) NOT NULL UNIQUE,
+  code VARCHAR(40) NULL,
+  description VARCHAR(255) NULL,
+  active TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_dept_active (active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS doctors (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(160) NOT NULL,
+  department_id INT UNSIGNED NULL,
+  department_name VARCHAR(140) NOT NULL,
+  room_no VARCHAR(60) NULL,
+  qualification VARCHAR(160) NULL,
+  opd_timings VARCHAR(160) NULL,
+  active TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_doc_dept_id (department_id),
+  INDEX idx_doc_dept_name (department_name),
+  INDEX idx_doc_active (active),
+  CONSTRAINT fk_doctors_dept FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS templates (

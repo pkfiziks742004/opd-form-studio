@@ -35,6 +35,16 @@ $uhid = get_field_val($perm, 'uhid', get_next_uhid());
 $bill_no = get_field_val($perm, 'bill_no', get_next_bill_no());
 $app_no = get_field_val($perm, 'app_no', get_next_app_no($visit));
 
+$doctorId = !empty($_POST['doctor_id']) ? (int)$_POST['doctor_id'] : null;
+$doctorName = trim($_POST['doctor_name'] ?? '');
+if ($doctorId && !$doctorName) {
+    $stDoc = db()->prepare("SELECT name FROM doctors WHERE id = ? LIMIT 1");
+    $stDoc->execute([$doctorId]);
+    $doctorName = (string)($stDoc->fetchColumn() ?: '');
+}
+
+$doctorDept = get_field_val($perm, 'doctor_dept', trim($_POST['doctor_dept'] ?? ''));
+
 $data = [
     $uhid,
     $name,
@@ -47,13 +57,15 @@ $data = [
     $visit,
     $visit_time,
     get_field_val($perm, 'panel', trim($_POST['panel'] ?? '')),
-    get_field_val($perm, 'doctor_dept', trim($_POST['doctor_dept'] ?? '')),
+    $doctorDept,
+    $doctorId,
+    $doctorName,
     get_field_val($perm, 'room_no', trim($_POST['room_no'] ?? '')),
     $app_no,
     (int)$user['id']
 ];
 
-$st = db()->prepare('INSERT INTO patients(uhid,name,age,sex,guardian,contact_number,address,bill_no,visit_date,visit_time,panel,doctor_dept,room_no,app_no,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+$st = db()->prepare('INSERT INTO patients(uhid,name,age,sex,guardian,contact_number,address,bill_no,visit_date,visit_time,panel,doctor_dept,doctor_id,doctor_name,room_no,app_no,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
 $st->execute($data);
 $id = (int)db()->lastInsertId();
 

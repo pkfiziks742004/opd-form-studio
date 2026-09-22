@@ -42,6 +42,7 @@
             date: dateStr,
             panel: form.panel?.value || '',
             doctor_dept: form.doctor_dept?.value || '',
+            doctor_name: form.doctor_name?.value || '',
             room_no: form.room_no?.value || '',
             app_no: form.app_no?.value || ''
         };
@@ -77,6 +78,10 @@
             setVal('.ml-val-date', v.date);
             setVal('.ml-val-panel', v.panel);
             if (v.doctor_dept) setVal('.ml-val-dept', v.doctor_dept);
+            if (v.doctor_name) {
+                setVal('.ml-doctor-name', v.doctor_name);
+                setVal('.ml-val-doctor-name', v.doctor_name);
+            }
             setVal('.ml-val-room', v.room_no);
             setVal('.ml-val-app', v.app_no);
             scaleCodeSheet();
@@ -108,13 +113,19 @@
                 const d = await r.json();
                 if (!d.ok) return;
 
+                const badge = document.getElementById('tplTypeBadge');
                 if (d.type === 'code') {
                     paper.dataset.mode = 'code';
                     paper.style.backgroundImage = 'none';
                     paper.innerHTML = d.html || '';
                     if (adjustLink) {
-                        adjustLink.href = 'templates.php';
+                        adjustLink.href = 'templates.php?tab=customizer&template_id=' + d.id;
                         adjustLink.textContent = 'Manage template';
+                    }
+                    if (badge) {
+                        badge.textContent = '🩺 Digital Vector Template';
+                        badge.style.background = '#e6f5f2';
+                        badge.style.color = '#087f6c';
                     }
                     scaleCodeSheet();
                     refresh();
@@ -125,6 +136,11 @@
                     if (adjustLink) {
                         adjustLink.href = 'template_editor.php?template_id=' + d.id;
                         adjustLink.textContent = 'Adjust layout';
+                    }
+                    if (badge) {
+                        badge.textContent = '🖼️ Uploaded Pad Scan';
+                        badge.style.background = '#e0f2fe';
+                        badge.style.color = '#0284c7';
                     }
                     Object.entries(d.layout || {}).forEach(([k, p]) => {
                         const s = document.createElement('span');

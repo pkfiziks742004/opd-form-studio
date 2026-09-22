@@ -3,6 +3,7 @@ require_once __DIR__ . '/includes/header.php';
 require_once __DIR__ . '/includes/layout.php';
 require_once __DIR__ . '/includes/code_template.php';
 require_once __DIR__ . '/includes/settings.php';
+require_once __DIR__ . '/includes/doctor_dept.php';
 
 $permissions = field_permissions((int)$user['id']);
 $templates = db()->query('SELECT id, name, file_path, default_layout_json, template_type FROM templates WHERE active=1 ORDER BY id ASC')->fetchAll();
@@ -23,7 +24,7 @@ if (!$tpl && $templates) {
 }
 
 $isCode = is_code_template($tpl);
-$layout = $isCode ? [] : get_layout($tpl, (int)$user['id']);
+$layout = $tpl ? get_layout($tpl, (int)$user['id']) : [];
 
 function input_state(array $permissions, string $key): string {
     return empty($permissions[$key]['editable']) ? 'disabled' : '';
@@ -58,6 +59,8 @@ if ($isRevisit) {
     $defaultPanel = $revisitPatient['panel'] ?? 'CASH';
     $defaultDept = $revisitPatient['doctor_dept'] ?? '';
     $defaultRoom = $revisitPatient['room_no'] ?? '';
+    $defaultDoctorId = (int)($revisitPatient['doctor_id'] ?? 0);
+    $defaultDoctorName = $revisitPatient['doctor_name'] ?? '';
     
     if (!empty($revisitPatient['uhid'])) {
         $stCount = db()->prepare("SELECT COUNT(*) FROM patients WHERE uhid = ?");
@@ -77,12 +80,16 @@ if ($isRevisit) {
     $defaultPanel = 'CASH';
     $defaultDept = '';
     $defaultRoom = '';
+    $defaultDoctorId = 0;
+    $defaultDoctorName = '';
 }
 
 // Auto-generated numbers matching admin prefixes & today's appointment counter
 $defaultBill = get_next_bill_no();
 $defaultAppNo = get_next_app_no();
-$departments = get_doctor_departments();
+$departmentsList = get_all_departments(true);
+$doctorsGrouped = get_doctors_grouped_by_dept();
+$departments = array_column($departmentsList, 'name');
 if (!$defaultDept && !empty($departments)) {
     $defaultDept = $departments[0];
 }
@@ -113,6 +120,25 @@ if (!$defaultDept && !empty($departments)) {
     font-weight: 700 !important;
     color: #0f172a !important;
     cursor: default;
+}
+.btn-field-mini-action {
+    background: #e6f8f3;
+    color: var(--primary-dark);
+    border: 1px solid rgba(8, 127, 108, 0.28);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.btn-field-mini-action:hover {
+    background: var(--primary);
+    color: #ffffff;
+    border-color: var(--primary);
 }
 </style>
 
@@ -344,19 +370,43 @@ if (!$defaultDept && !empty($departments)) {
                 <?php endif; ?>
 
                 <?php if ($permissions['doctor_dept']['visible']): ?>
+                    <!-- Doctor Department -->
                     <div class="form-field-group">
-                        <label for="doctor_dept">Doctor department</label>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                            <label for="doctor_dept" style="margin: 0;">Doctor Department</label>
+                            <button type="button" class="btn-field-mini-action" onclick="openQuickDeptModal()" title="Add new department">+ Add Dept</button>
+                        </div>
+                        <div class="input-icon-wrap">
+                            <svg class="field-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect width="18" height="18" x="3" y="3" rx="2"></rect>
+                                <path d="M3 9h18"></path>
+                                <path d="M9 21V9"></path>
+                            </svg>
+                            <select name="doctor_dept" id="doctor_dept" <?= input_state($permissions, 'doctor_dept') ?>>
+                                <option value="">-- Select Department --</option>
+                                <?php foreach ($departments as $dept): ?>
+                                    <option value="<?= e($dept) ?>" <?= $defaultDept === $dept ? 'selected' : '' ?>><?= e($dept) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Consulting Doctor (Dynamic Cascading) -->
+                    <div class="form-field-group">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                            <label for="doctor_id" style="margin: 0;">Consulting Doctor</label>
+                            <button type="button" class="btn-field-mini-action" onclick="openQuickDocModal()" title="Add new doctor">+ Add Doctor</button>
+                        </div>
                         <div class="input-icon-wrap">
                             <svg class="field-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1a.2.2 0 1 0 .3.3"></path>
                                 <path d="M8 15v1a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6v-4"></path>
                                 <circle cx="20" cy="10" r="2"></circle>
                             </svg>
-                            <select name="doctor_dept" id="doctor_dept" <?= input_state($permissions, 'doctor_dept') ?>>
-                                <?php foreach ($departments as $dept): ?>
-                                    <option value="<?= e($dept) ?>" <?= $defaultDept === $dept ? 'selected' : '' ?>><?= e($dept) ?></option>
-                                <?php endforeach; ?>
+                            <select name="doctor_id" id="doctor_id" <?= input_state($permissions, 'doctor_dept') ?>>
+                                <option value="">-- Select Doctor --</option>
                             </select>
+                            <input type="hidden" name="doctor_name" id="doctor_name" value="<?= e($defaultDoctorName) ?>">
                         </div>
                     </div>
                 <?php endif; ?>
@@ -449,6 +499,32 @@ if (!$defaultDept && !empty($departments)) {
                 </a>
             </div>
 
+            <!-- Template Type & Print Selection Strip -->
+            <div class="template-selector-strip" style="background:#f8fafc; border:1.5px solid #e2e8f0; border-radius:8px; padding:10px 14px; margin-bottom:14px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+                <div style="display:flex; align-items:center; gap:8px; flex:1; min-width:260px;">
+                    <label for="templateSelect" style="font-size:12.5px; font-weight:700; color:#334155; white-space:nowrap; display:flex; align-items:center; gap:5px;">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                        Print Template:
+                    </label>
+                    <select id="templateSelect" name="template_id" class="form-select" style="padding:6px 12px; font-size:13px; font-weight:600; border-radius:6px; border:1.5px solid #cbd5e1; background:#ffffff; color:#0f172a; width:100%; max-width:340px; cursor:pointer;">
+                        <?php foreach ($templates as $t): 
+                            $isCodeT = is_code_template($t);
+                            $isDef = ((int)$t['id'] === $defId);
+                        ?>
+                            <option value="<?= $t['id'] ?>" <?= ((int)$t['id'] === (int)$tpl['id']) ? 'selected' : '' ?>>
+                                <?= $isCodeT ? '🩺 Digital Vector (Code): ' : '🖼️ Uploaded Pad (Image): ' ?><?= e($t['name']) ?><?= $isDef ? ' ★ Default' : '' ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span id="tplTypeBadge" style="font-size:11.5px; font-weight:700; padding:4px 10px; border-radius:4px; background:<?= $isCode ? '#e6f5f2' : '#e0f2fe' ?>; color:<?= $isCode ? '#087f6c' : '#0284c7' ?>;">
+                        <?= $isCode ? '🩺 Digital Vector Template' : '🖼️ Uploaded Pad Scan' ?>
+                    </span>
+                </div>
+            </div>
+
             <?php if ($tpl): ?>
                 <div class="paper-preview-wrap paper-preview" id="paperPreview" data-mode="<?= $isCode ? 'code' : 'image' ?>" <?= !$isCode ? 'style="background-image:url(\''.e($tpl['file_path']).'\')"' : '' ?>>
                     <?php if ($isCode): ?>
@@ -467,7 +543,7 @@ if (!$defaultDept && !empty($departments)) {
                             'visit_time' => date('H:i'),
                             'doctor_dept' => $defaultDept,
                             'room_no' => $defaultRoom
-                        ], [], true) ?>
+                        ], [], true, $layout, 0, $tpl) ?>
                     <?php else: ?>
                         <?php foreach ($layout as $k => $pos):
                             if (empty($permissions[$k]['visible'])) continue; ?>
@@ -541,6 +617,352 @@ if (!$defaultDept && !empty($departments)) {
         }
     })();
 </script>
+
+<!-- ========================================================================= -->
+<!-- Modals: Quick Add Doctor & Quick Add Department                          -->
+<!-- ========================================================================= -->
+<div id="quickDoctorModal" class="doc-modal-backdrop" style="display: none;" role="dialog" aria-modal="true">
+    <div class="doc-modal-box" style="max-width: 480px;">
+        <div class="doc-modal-header">
+            <h3>Quick Add Doctor</h3>
+            <button type="button" class="btn-doc-modal-close" onclick="closeQuickDocModal()">&times;</button>
+        </div>
+        <form id="quickDocForm" onsubmit="handleQuickDocSubmit(event)">
+            <div class="doc-modal-body">
+                <div class="doc-form-group">
+                    <label for="qdName">Doctor Full Name <span style="color:#ef4444;">*</span></label>
+                    <input type="text" id="qdName" class="doc-form-input" placeholder="e.g. Dr. Rajesh Verma" required>
+                </div>
+                <div class="doc-form-row">
+                    <div class="doc-form-group">
+                        <label for="qdDept">Department <span style="color:#ef4444;">*</span></label>
+                        <select id="qdDept" class="doc-form-select" required>
+                            <?php foreach ($departments as $d): ?>
+                                <option value="<?= e($d) ?>"><?= e($d) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="doc-form-group">
+                        <label for="qdRoom">Room / Cabin No.</label>
+                        <input type="text" id="qdRoom" class="doc-form-input" placeholder="e.g. 104">
+                    </div>
+                </div>
+                <div class="doc-form-group">
+                    <label for="qdQual">Qualification (Optional)</label>
+                    <input type="text" id="qdQual" class="doc-form-input" placeholder="e.g. MBBS, MD, MS">
+                </div>
+            </div>
+            <div class="doc-modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeQuickDocModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary" id="btnQuickDocSubmit">Add & Select Doctor</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="quickDeptModal" class="doc-modal-backdrop" style="display: none;" role="dialog" aria-modal="true">
+    <div class="doc-modal-box" style="max-width: 420px;">
+        <div class="doc-modal-header">
+            <h3>Quick Add Department</h3>
+            <button type="button" class="btn-doc-modal-close" onclick="closeQuickDeptModal()">&times;</button>
+        </div>
+        <form id="quickDeptForm" onsubmit="handleQuickDeptSubmit(event)">
+            <div class="doc-modal-body">
+                <div class="doc-form-group">
+                    <label for="qdpName">Department Name <span style="color:#ef4444;">*</span></label>
+                    <input type="text" id="qdpName" class="doc-form-input" placeholder="e.g. Neurology, Nephrology" required>
+                </div>
+                <div class="doc-form-group">
+                    <label for="qdpCode">Short Code (Optional)</label>
+                    <input type="text" id="qdpCode" class="doc-form-input" placeholder="e.g. NEURO">
+                </div>
+            </div>
+            <div class="doc-modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeQuickDeptModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary" id="btnQuickDeptSubmit">Add Department</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Cascading Doctors & Dynamic Selection Logic -->
+<script>
+window.DOCTORS_BY_DEPT = <?= json_encode($doctorsGrouped, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_HEX_AMP) ?>;
+window.INITIAL_SELECTED_DOC_ID = <?= (int)$defaultDoctorId ?>;
+window.INITIAL_SELECTED_DOC_NAME = <?= json_encode($defaultDoctorName) ?>;
+
+function updateDoctorDropdown(preferredDocId = 0, preferredDocName = '') {
+    const deptSelect = document.getElementById('doctor_dept');
+    const docSelect = document.getElementById('doctor_id');
+    const docNameInput = document.getElementById('doctor_name');
+    const roomInput = document.getElementById('room_no');
+    if (!deptSelect || !docSelect) return;
+
+    const selectedDept = deptSelect.value.trim();
+    const doctors = window.DOCTORS_BY_DEPT[selectedDept] || [];
+
+    // Clear options
+    docSelect.innerHTML = '';
+
+    if (doctors.length === 0) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = selectedDept ? `-- No Doctors in ${selectedDept} --` : '-- Select Department First --';
+        docSelect.appendChild(opt);
+        if (docNameInput) docNameInput.value = '';
+        return;
+    }
+
+    const defaultOpt = document.createElement('option');
+    defaultOpt.value = '';
+    defaultOpt.textContent = '-- Select Consulting Doctor --';
+    docSelect.appendChild(defaultOpt);
+
+    let matchFound = false;
+    doctors.forEach(doc => {
+        const opt = document.createElement('option');
+        opt.value = doc.id;
+        opt.textContent = doc.name + (doc.room_no ? ` (Room ${doc.room_no})` : '');
+        opt.dataset.doctorName = doc.name;
+        opt.dataset.roomNo = doc.room_no || '';
+
+        if (preferredDocId > 0 && doc.id === preferredDocId) {
+            opt.selected = true;
+            matchFound = true;
+        } else if (!matchFound && preferredDocName && doc.name.toLowerCase() === preferredDocName.toLowerCase()) {
+            opt.selected = true;
+            matchFound = true;
+        }
+        docSelect.appendChild(opt);
+    });
+
+    // If no specific match requested, select first doctor by default
+    if (!matchFound && doctors.length > 0) {
+        docSelect.options[1].selected = true;
+        const firstDoc = doctors[0];
+        if (docNameInput) docNameInput.value = firstDoc.name;
+        if (roomInput && firstDoc.room_no && (!roomInput.value || roomInput.dataset.autoFilled === 'true')) {
+            roomInput.value = firstDoc.room_no;
+            roomInput.dataset.autoFilled = 'true';
+        }
+    } else if (matchFound) {
+        const selOpt = docSelect.selectedOptions[0];
+        if (docNameInput && selOpt) docNameInput.value = selOpt.dataset.doctorName || '';
+        if (roomInput && selOpt && selOpt.dataset.roomNo) {
+            roomInput.value = selOpt.dataset.roomNo;
+            roomInput.dataset.autoFilled = 'true';
+        }
+    }
+
+    // Trigger input event to update preview
+    docSelect.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const deptSelect = document.getElementById('doctor_dept');
+    const docSelect = document.getElementById('doctor_id');
+    const docNameInput = document.getElementById('doctor_name');
+    const roomInput = document.getElementById('room_no');
+
+    if (deptSelect) {
+        deptSelect.addEventListener('change', () => {
+            updateDoctorDropdown();
+        });
+    }
+
+    if (docSelect) {
+        docSelect.addEventListener('change', () => {
+            const opt = docSelect.selectedOptions[0];
+            if (opt && opt.value) {
+                if (docNameInput) docNameInput.value = opt.dataset.doctorName || '';
+                if (roomInput && opt.dataset.roomNo) {
+                    roomInput.value = opt.dataset.roomNo;
+                    roomInput.dataset.autoFilled = 'true';
+                }
+            } else {
+                if (docNameInput) docNameInput.value = '';
+            }
+        });
+    }
+
+    if (roomInput) {
+        roomInput.addEventListener('input', () => {
+            roomInput.dataset.autoFilled = 'false';
+        });
+    }
+
+    // Initial load
+    updateDoctorDropdown(window.INITIAL_SELECTED_DOC_ID, window.INITIAL_SELECTED_DOC_NAME);
+});
+
+// Quick Add Doctor Modal Functions
+function openQuickDocModal() {
+    const currentDept = document.getElementById('doctor_dept')?.value || '';
+    const qdDept = document.getElementById('qdDept');
+    if (qdDept && currentDept) {
+        qdDept.value = currentDept;
+    }
+    document.getElementById('qdName').value = '';
+    document.getElementById('qdRoom').value = '';
+    document.getElementById('qdQual').value = '';
+    document.getElementById('quickDoctorModal').style.display = 'flex';
+    document.getElementById('qdName').focus();
+}
+
+function closeQuickDocModal() {
+    document.getElementById('quickDoctorModal').style.display = 'none';
+}
+
+function handleQuickDocSubmit(e) {
+    e.preventDefault();
+    const name = document.getElementById('qdName').value.trim();
+    const dept = document.getElementById('qdDept').value.trim();
+    const room = document.getElementById('qdRoom').value.trim();
+    const qual = document.getElementById('qdQual').value.trim();
+    const btn = document.getElementById('btnQuickDocSubmit');
+
+    if (!name || !dept) {
+        alert('Please provide Doctor Name and Department.');
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('department_name', dept);
+    formData.append('room_no', room);
+    formData.append('qualification', qual);
+
+    fetch('patient_ajax.php?action=quick_add_doctor', {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(res => {
+        btn.disabled = false;
+        btn.textContent = 'Add & Select Doctor';
+        if (!res.success) {
+            alert(res.message || 'Failed to save doctor.');
+            return;
+        }
+
+        const doc = res.doctor;
+        if (!window.DOCTORS_BY_DEPT[doc.department_name]) {
+            window.DOCTORS_BY_DEPT[doc.department_name] = [];
+        }
+        window.DOCTORS_BY_DEPT[doc.department_name].push(doc);
+
+        const deptSelect = document.getElementById('doctor_dept');
+        if (deptSelect && deptSelect.value !== doc.department_name) {
+            deptSelect.value = doc.department_name;
+        }
+
+        updateDoctorDropdown(doc.id, doc.name);
+        closeQuickDocModal();
+    })
+    .catch(err => {
+        btn.disabled = false;
+        btn.textContent = 'Add & Select Doctor';
+        console.error(err);
+        alert('Network error while saving doctor.');
+    });
+}
+
+// Quick Add Department Modal Functions
+function openQuickDeptModal() {
+    document.getElementById('qdpName').value = '';
+    document.getElementById('qdpCode').value = '';
+    document.getElementById('quickDeptModal').style.display = 'flex';
+    document.getElementById('qdpName').focus();
+}
+
+function closeQuickDeptModal() {
+    document.getElementById('quickDeptModal').style.display = 'none';
+}
+
+function handleQuickDeptSubmit(e) {
+    e.preventDefault();
+    const name = document.getElementById('qdpName').value.trim();
+    const code = document.getElementById('qdpCode').value.trim();
+    const btn = document.getElementById('btnQuickDeptSubmit');
+
+    if (!name) {
+        alert('Please provide Department Name.');
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('code', code);
+
+    fetch('patient_ajax.php?action=quick_add_department', {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(res => {
+        btn.disabled = false;
+        btn.textContent = 'Add Department';
+        if (!res.success) {
+            alert(res.message || 'Failed to save department.');
+            return;
+        }
+
+        const dept = res.department;
+        if (!window.DOCTORS_BY_DEPT[dept.name]) {
+            window.DOCTORS_BY_DEPT[dept.name] = [];
+        }
+
+        // Add option to #doctor_dept and #qdDept
+        const deptSelect = document.getElementById('doctor_dept');
+        const qdDept = document.getElementById('qdDept');
+
+        [deptSelect, qdDept].forEach(sel => {
+            if (!sel) return;
+            let exists = false;
+            for (let i = 0; i < sel.options.length; i++) {
+                if (sel.options[i].value.toLowerCase() === dept.name.toLowerCase()) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) {
+                const opt = document.createElement('option');
+                opt.value = dept.name;
+                opt.textContent = dept.name;
+                sel.appendChild(opt);
+            }
+        });
+
+        if (deptSelect) {
+            deptSelect.value = dept.name;
+            deptSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        closeQuickDeptModal();
+    })
+    .catch(err => {
+        btn.disabled = false;
+        btn.textContent = 'Add Department';
+        console.error(err);
+        alert('Network error while saving department.');
+    });
+}
+
+// Close quick modals when clicking outside
+window.addEventListener('click', (e) => {
+    const qDocModal = document.getElementById('quickDoctorModal');
+    const qDeptModal = document.getElementById('quickDeptModal');
+    if (e.target === qDocModal) closeQuickDocModal();
+    if (e.target === qDeptModal) closeQuickDeptModal();
+});
+</script>
+
 <?php $pfJsVer = file_exists(__DIR__ . '/assets/js/patient-form.js') ? filemtime(__DIR__ . '/assets/js/patient-form.js') : '2.2'; ?>
 <script src="assets/js/patient-form.js?v=<?= $pfJsVer ?>"></script>
 
