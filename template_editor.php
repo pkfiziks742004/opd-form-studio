@@ -521,7 +521,8 @@ require_once __DIR__ . '/includes/header.php';
                         themePreset: '<?= $activeThemeKey ?>'
                     };
                 </script>
-                <script src="assets/js/template-editor.js"></script>
+                <?php $teJsVer = file_exists(__DIR__ . '/assets/js/template-editor.js') ? filemtime(__DIR__ . '/assets/js/template-editor.js') : '2.2'; ?>
+                <script src="assets/js/template-editor.js?v=<?= $teJsVer ?>"></script>
 
             <?php else: ?>
                 <!-- Image Template Canvas -->
@@ -541,7 +542,8 @@ require_once __DIR__ . '/includes/header.php';
                         paperPresets: <?= json_encode($paperPresets) ?>
                     };
                 </script>
-                <script src="assets/js/template-editor.js"></script>
+                <?php $teJsVer = file_exists(__DIR__ . '/assets/js/template-editor.js') ? filemtime(__DIR__ . '/assets/js/template-editor.js') : '2.2'; ?>
+                <script src="assets/js/template-editor.js?v=<?= $teJsVer ?>"></script>
             <?php endif; ?>
         </section>
     </div>

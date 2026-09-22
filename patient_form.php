@@ -541,6 +541,7 @@ if (!$defaultDept && !empty($departments)) {
         }
     })();
 </script>
-<script src="assets/js/patient-form.js"></script>
+<?php $pfJsVer = file_exists(__DIR__ . '/assets/js/patient-form.js') ? filemtime(__DIR__ . '/assets/js/patient-form.js') : '2.2'; ?>
+<script src="assets/js/patient-form.js?v=<?= $pfJsVer ?>"></script>
 
 <?php require __DIR__ . '/includes/footer.php'; ?>

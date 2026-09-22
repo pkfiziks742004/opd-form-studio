@@ -25,7 +25,8 @@ $topSubtitle = $currentTitleInfo[1];
     <meta name="csrf-token" content="<?= csrf_token() ?>">
     <meta name="user-role" content="<?= e($user['role']) ?>">
     <title><?= e($topTitle) ?> — <?= e(envv('APP_NAME', 'OPD Form Studio')) ?></title>
-    <link rel="stylesheet" href="assets/css/app.css">
+    <?php $appCssVer = file_exists(__DIR__ . '/../assets/css/app.css') ? filemtime(__DIR__ . '/../assets/css/app.css') : '2.2'; ?>
+    <link rel="stylesheet" href="assets/css/app.css?v=<?= $appCssVer ?>">
 </head>
 <body>
 <div class="app-shell">
